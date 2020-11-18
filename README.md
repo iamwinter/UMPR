@@ -1,26 +1,28 @@
 UMPR
 ===
-> Codes for "Recommendation by Users' Multi-modal Preferences for Smart City Applications".  
+>Implementation using pytorch for the paper：  
+Xu, Cai, Ziyu Guan, Wei Zhao, Quanzhou Wu, Meng Yan, Long Chen, and Qiguang Miao. "Recommendation by Users' Multi-modal Preferences for Smart City Applications." IEEE Transactions on Industrial Informatics (2020).
 
-# Current work
+Only Review Network has been implemented.
 
-Review Network: Finished  
-Visual Network: Not finished  
-Control Network: Not finished  
+# Environments
+  + python 3.8
+  + pytorch 1.7
 
-# Preparation
-
-1. Download pre-trained embedding dictionary "glove.twitter.27B.50d.txt" on https://nlp.stanford.edu/projects/glove/  
-2. Training data "reviews.json" contains 10000 samples selected from "yelp_academic_dataset_review.json" on https://www.yelp.com/dataset/documentation/main  
-
-# Requirements
-
-tensorflow 1.15.2
+# Dataset
+  You need to prepare the following documents:  
+  1. dataset(`/data/music/Digital_Music_5.json.gz`)  
+   Download from http://jmcauley.ucsd.edu/data/amazon (Choose Digital Music)
 
 # Running
 
-Please first correct the file path at the top of the "main.py"
+Preprocess origin dataset in json format to train.csv,valid.csv and test.csv.  
+**Rewrite some necessary settings** in this file before running it. 
+```
+python preprocess.py
+```
 
-```shell script
+Train and evaluate the model:
+```
 python main.py
 ```
