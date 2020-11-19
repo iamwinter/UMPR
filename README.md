@@ -20,8 +20,15 @@ Only Review Network has been implemented.
 + Preprocess origin dataset in json format to train.csv,valid.csv and test.csv.  
 **Rewrite some necessary settings** in this file before running it. 
 ```
-python preprocess.py
+python preprocess.py --train_rate 0.8
 ```
+>More arguments with examples (You can also see them at `preprocess.py`):  
+--data_path data/amazonCSJ/reviews_Clothing_Shoes_and_Jewelry_5.json.gz  
+--select_cols reviewerID asin reviewText overall  
+--train_rate 0.8  
+--save_dir ./  
+
+
 + Train and evaluate the model:
 ```
 python main.py --device cuda:0
