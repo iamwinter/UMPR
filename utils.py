@@ -13,8 +13,7 @@ def mse_loss(model, dataloader):
     mse, sample_count = 0, 0
     with torch.no_grad():
         for batch in dataloader:
-            # user_reviews, item_reviews, reviews, ratings = map(lambda x: x.to(next(model.parameters()).device), batch)
-            user_reviews, item_reviews, reviews, ratings = [x.to(next(model.parameters()).device) for x in batch]
+            user_reviews, item_reviews, reviews, ratings = map(lambda x: x.to(next(model.parameters()).device), batch)
             predict = model(user_reviews, item_reviews, reviews)
             mse += F.mse_loss(predict, ratings, reduction='sum').item()
             sample_count += len(ratings)
