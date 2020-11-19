@@ -48,7 +48,7 @@ if __name__ == '__main__':
     start_time = time.perf_counter()
 
     # You must set following args depend on your dataset!
-    data_path = 'data/music/Digital_Music_5.json.gz'
+    data_path = 'data/amazonCSJ/reviews_Clothing_Shoes_and_Jewelry_5.json.gz'
     select_Cols = ['reviewerID', 'asin', 'reviewText', 'overall']  # Selected columns of above dataset in json format
     rename_Cols = ['userID', 'itemID', 'review', 'rating']  # Rename above columns for convenience
     save_path = os.path.dirname(data_path)

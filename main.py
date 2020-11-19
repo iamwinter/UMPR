@@ -1,28 +1,13 @@
 import os
 import pickle
 import time
-
 import torch
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from config import Config
-from model import Dataset, UMPR
-
-
-def date(f='%Y-%m-%d %H:%M:%S'):
-    return time.strftime(f, time.localtime())
-
-
-def mse_loss(model, dataloader):
-    mse, sample_count = 0, 0
-    with torch.no_grad():
-        for batch in dataloader:
-            user_reviews, item_reviews, reviews, ratings = map(lambda x: x.to(config.device), batch)
-            predict = model(user_reviews, item_reviews, reviews)
-            mse += F.mse_loss(predict, ratings, reduction='sum').item()
-            sample_count += len(ratings)
-    return mse / sample_count
+from utils import Dataset, date, mse_loss
+from model import UMPR
 
 
 def train(train_dataloader, valid_dataloader, model, config, model_path):
@@ -77,9 +62,9 @@ if __name__ == '__main__':
     word_emb = pickle.load(open('data/embedding/word_emb.pkl', 'rb'), encoding='iso-8859-1')
     word_dict = pickle.load(open('data/embedding/dict.pkl', 'rb'), encoding='iso-8859-1')
 
-    train_dataset = Dataset('data/music/train.csv', word_dict, config)
-    valid_dataset = Dataset('data/music/valid.csv', word_dict, config)
-    test_dataset = Dataset('data/music/test.csv', word_dict, config)
+    train_dataset = Dataset('data/amazonCSJ/train.csv', word_dict, config)
+    valid_dataset = Dataset('data/amazonCSJ/valid.csv', word_dict, config)
+    test_dataset = Dataset('data/amazonCSJ/test.csv', word_dict, config)
     train_dlr = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
     valid_dlr = DataLoader(valid_dataset, batch_size=config.batch_size)
     test_dlr = DataLoader(test_dataset, batch_size=config.batch_size)

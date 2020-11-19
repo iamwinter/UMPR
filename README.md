@@ -11,18 +11,32 @@ Only Review Network has been implemented.
 
 # Dataset
   You need to prepare the following documents:  
-  1. dataset(`/data/music/Digital_Music_5.json.gz`)  
-   Download from http://jmcauley.ucsd.edu/data/amazon (Choose Digital Music)
+  1. dataset(`data/amazonCSJ/reviews_Clothing_Shoes_and_Jewelry_5.json.gz`)  
+    It contains 278677 reviews
+    and download from http://jmcauley.ucsd.edu/data/amazon/links.html
 
 # Running
 
-Preprocess origin dataset in json format to train.csv,valid.csv and test.csv.  
++ Preprocess origin dataset in json format to train.csv,valid.csv and test.csv.  
 **Rewrite some necessary settings** in this file before running it. 
 ```
 python preprocess.py
 ```
++ Train and evaluate the model:
+```
+python main.py --device cuda:0
+```
 
-Train and evaluate the model:
-```
-python main.py
-```
+>More arguments (You can also see them at `config.py`):  
+--device  
+--train_epochs  
+--batch_size  
+--learning_rate  
+--l2_regularization  
+--learning_rate_decay  
+--review_count  
+--review_length  
+--lowest_review_count  
+--PAD_WORD  
+--gru_hidden_size  
+--self_attention_hidden_size  
