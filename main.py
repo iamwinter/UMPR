@@ -18,7 +18,7 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
     start_time = time.perf_counter()
 
     opt = torch.optim.Adam(model.parameters(), config.learning_rate, weight_decay=config.l2_regularization)
-    torch.optim.lr_scheduler.ExponentialLR(opt, config.learning_rate_decay)
+    lr_sch = torch.optim.lr_scheduler.ExponentialLR(opt, config.learning_rate_decay)
 
     best_loss, best_epoch = 100, 0
     for epoch in range(config.train_epochs):
@@ -35,6 +35,7 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
             total_loss += loss.item()
             total_samples += len(predict)
 
+        lr_sch.step()
         model.eval()
         valid_mse = mse_loss(model, valid_dataloader)
         train_loss = total_loss / total_samples
