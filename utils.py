@@ -5,11 +5,25 @@ from torch.nn import functional as F
 from torch.utils.data import Dataset as BaseDataset
 
 
+def load_embedding(word2vec_file):
+    with open(word2vec_file, encoding='utf-8') as f:
+        word_emb = list()
+        word_dict = dict()
+        word_emb.append([0])
+        word_dict['<UNK>'] = 0
+        for line in f.readlines():
+            tokens = line.split(' ')
+            word_emb.append([float(i) for i in tokens[1:]])
+            word_dict[tokens[0]] = len(word_dict)
+        word_emb[0] = [0] * len(word_emb[1])
+    return word_emb, word_dict
+
+
 def date(f='%Y-%m-%d %H:%M:%S'):
     return time.strftime(f, time.localtime())
 
 
-def mse_loss(model, dataloader):
+def predict_mse(model, dataloader):
     mse, sample_count = 0, 0
     with torch.no_grad():
         for batch in dataloader:

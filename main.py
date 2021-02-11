@@ -1,19 +1,18 @@
 import os
-import pickle
 import time
 import torch
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from config import Config
-from utils import Dataset, date, mse_loss
+from utils import Dataset, date, predict_mse, load_embedding
 from model import UMPR
 
 
 def train(train_dataloader, valid_dataloader, model, config, model_path):
-    print(f'{date()}## Start the training!')
-    train_mse = mse_loss(model, train_dataloader)
-    valid_mse = mse_loss(model, valid_dataloader)
+    print(f'{date()}## Start up the training!')
+    train_mse = predict_mse(model, train_dataloader)
+    valid_mse = predict_mse(model, valid_dataloader)
     print(f'{date()}#### Initial train mse {train_mse:.6f}, validation mse {valid_mse:.6f}')
     start_time = time.perf_counter()
 
@@ -27,17 +26,17 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
         for batch in train_dataloader:
             user_reviews, item_reviews, reviews, ratings = map(lambda x: x.to(config.device), batch)
             predict = model(user_reviews, item_reviews, reviews)
-            loss = F.mse_loss(predict, ratings, reduction='sum')
+            loss = F.mse_loss(predict, ratings, reduction='mean')
             opt.zero_grad()
             loss.backward()
             opt.step()
 
-            total_loss += loss.item()
+            total_loss += loss.item() * len(predict)
             total_samples += len(predict)
 
         lr_sch.step()
         model.eval()
-        valid_mse = mse_loss(model, valid_dataloader)
+        valid_mse = predict_mse(model, valid_dataloader)
         train_loss = total_loss / total_samples
         print(f"{date()}#### Epoch {epoch:3d}; train mse {train_loss:.6f}; validation mse {valid_mse:.6f}")
 
@@ -49,23 +48,15 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
     print(f'{date()}## End of training! Time used {end_time - start_time:.0f} seconds.')
 
 
-def test(dataloader, best_model):
-    print(f'{date()}## Start the testing!')
-    start_time = time.perf_counter()
-    test_loss = mse_loss(best_model, dataloader)
-    end_time = time.perf_counter()
-    print(f"{date()}## Test end, test mse is {test_loss:.6f}, time used {end_time - start_time:.0f} seconds.")
-
-
 if __name__ == '__main__':
     config = Config()
-    print(f'{date()}## Load embedding and data...')
-    word_emb = pickle.load(open('data/embedding/word_emb.pkl', 'rb'), encoding='iso-8859-1')
-    word_dict = pickle.load(open('data/embedding/dict.pkl', 'rb'), encoding='iso-8859-1')
+    print(config)
+    print(f'{date()}## Load word embedding and dataset...')
+    word_emb, word_dict = load_embedding(config.word2vec_file)
 
-    train_dataset = Dataset('data/amazonCSJ/train.csv', word_dict, config)
-    valid_dataset = Dataset('data/amazonCSJ/valid.csv', word_dict, config)
-    test_dataset = Dataset('data/amazonCSJ/test.csv', word_dict, config)
+    train_dataset = Dataset(config.train_file, word_dict, config)
+    valid_dataset = Dataset(config.valid_file, word_dict, config)
+    test_dataset = Dataset(config.test_file, word_dict, config)
     train_dlr = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
     valid_dlr = DataLoader(valid_dataset, batch_size=config.batch_size)
     test_dlr = DataLoader(test_dataset, batch_size=config.batch_size)
@@ -73,7 +64,9 @@ if __name__ == '__main__':
     Model = UMPR(config, word_emb).to(config.device)
     del word_emb, word_dict, train_dataset, valid_dataset, test_dataset
 
-    os.makedirs('model', exist_ok=True)  # mkdir if not exist
-    model_Path = 'model/best_model.pt'
-    train(train_dlr, valid_dlr, Model, config, model_Path)
-    test(test_dlr, torch.load(model_Path))
+    if '/' in config.saved_model:
+        os.makedirs(os.path.dirname(config.saved_model), exist_ok=True)  # mkdir if not exist
+    train(train_dlr, valid_dlr, Model, config, config.saved_model)
+
+    test_loss = predict_mse(torch.load(config.saved_model), test_dlr)
+    print(f"{date()}## Test end, test mse is {test_loss:.6f}")

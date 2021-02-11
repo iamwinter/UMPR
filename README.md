@@ -1,49 +1,89 @@
 UMPR
 ===
->Implementation using pytorch for the paper：  
-Xu, Cai, Ziyu Guan, Wei Zhao, Quanzhou Wu, Meng Yan, Long Chen, and Qiguang Miao. "Recommendation by Users' Multi-modal Preferences for Smart City Applications." IEEE Transactions on Industrial Informatics (2020).
-
-Only Review Network has been implemented.
+Implementation for the paper：  
+>Xu, Cai, Ziyu Guan, Wei Zhao, Quanzhou Wu, Meng Yan, Long Chen, and Qiguang Miao.
+ "Recommendation by Users' Multi-modal Preferences for Smart City Applications."
+ IEEE Transactions on Industrial Informatics (2020).
 
 # Environments
   + python 3.8
   + pytorch 1.7
 
 # Dataset
-  You need to prepare the following documents:  
-  1. dataset(`data/amazonCSJ/reviews_Clothing_Shoes_and_Jewelry_5.json.gz`)  
-    It contains 278677 reviews
-    and download from http://jmcauley.ucsd.edu/data/amazon/links.html
+
+1. Amazon(2014) http://jmcauley.ucsd.edu/data/amazon/links.html
+2. Yelp(2020) https://www.yelp.com/dataset
+
+For example: `data/reviews_Clothing_Shoes_and_Jewelry_5.json.gz`.
+Then you should execute following command to create train/validation/test dataset.
+```shell script
+python data_preprocess.py --data_path Digital_Music_5.json --data_source amazon --save_file amazon_music_ratings.csv
+```
+
+# Word Embedding
+
++ Download from https://nlp.stanford.edu/projects/glove
+
+For example:`embedding/glove.6B.50d.txt`
 
 # Running
 
-+ Preprocess origin dataset in json format to train.csv,valid.csv and test.csv.  
-**Rewrite some necessary settings** in this file before running it. 
+Train and evaluate the model:
 ```
-python preprocess.py --train_rate 0.8
-```
->More arguments with examples (You can also see them at `preprocess.py`):  
---data_path data/amazonCSJ/reviews_Clothing_Shoes_and_Jewelry_5.json.gz  
---select_cols reviewerID asin reviewText overall  
---train_rate 0.8  
---save_dir ./  
-
-
-+ Train and evaluate the model:
-```
-python main.py --device cuda:0
+python main.py --dataset_file data/Digital_Music_5.json
 ```
 
->More arguments (You can also see them at `config.py`):  
---device  
---train_epochs  
---batch_size  
---learning_rate  
---l2_regularization  
---learning_rate_decay  
---review_count  
---review_length  
---lowest_review_count  
---PAD_WORD  
---gru_hidden_size  
---self_attention_hidden_size  
+# Experiment
+
+<table align="center">
+    <tr>
+        <th>Dataset(number of reviews)</th>
+        <th>MF</th>
+        <th>NeulMF</th>
+        <th>DeepCoNN</th>
+        <th>TransNets</th>
+        <th>MPCN</th>
+        <th>UMPR-R</th>
+        <th>UMPR</th>
+    </tr>
+    <tr>
+        <td>Amazon Music small (64,706)</td>
+        <td>0.900899</td>
+        <td>0.822472</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+    </tr>
+    <tr>
+        <td>Amazon Music (836,006)</td>
+        <td>0.875224</td>
+        <td>0.825261</td>
+    </tr>
+    <tr>
+        <td>Amazon Clothing, Shoes and Jewelry (5,748,920)</td>
+        <td>1.512551</td>
+        <td>1.502135</td>
+    </tr>
+    <tr>
+        <td>Yelp (8,021,121)</td>
+        <td>2.171064</td>
+        <td>2.041674</td>
+    </tr>
+</table>
+<p align="center" style="font-weight:bold;">
+Performance comparison (mean squared error) on several datasets.
+</p>
+
+**MF**: General Matrix Factorization.
+[Details](https://github.com/iamwinter/MatrixFactorization)
+
+**NeuMF**: Neural Collaborative Filtering.
+[Details](https://github.com/iamwinter/NeuralCollaborativeFiltering)
+
+**DeepCoNN**: [Details](https://github.com/iamwinter/DeepCoNN)
+
+**UMPR-R**: only review network part of UMPR.
+
+**UMPR**: Our complete model.
