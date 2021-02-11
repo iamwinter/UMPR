@@ -17,7 +17,7 @@ Implementation for the paper：
 For example: `data/reviews_Clothing_Shoes_and_Jewelry_5.json.gz`.
 Then you should execute following command to create train/validation/test dataset.
 ```shell script
-python data_preprocess.py --data_path Digital_Music_5.json --data_source amazon --save_file amazon_music_ratings.csv
+python data_preprocess.py --data_path Digital_Music_5.json --data_source amazon --train_rate 0.8 --save_dir ./music
 ```
 
 # Word Embedding
@@ -30,7 +30,7 @@ For example:`embedding/glove.6B.50d.txt`
 
 Train and evaluate the model:
 ```
-python main.py --dataset_file data/Digital_Music_5.json
+python main.py
 ```
 
 # Experiment
