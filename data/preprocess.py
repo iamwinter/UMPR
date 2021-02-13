@@ -25,6 +25,7 @@ def process_dataset(json_path, select_cols, train_rate, csv_path):
         stop_words = set(f.read().splitlines())
     with open('../embedding/punctuations.txt') as f:  # useless punctuations
         punctuations = set(f.read().splitlines())
+        punctuations.remove('.')
 
     def clean_review(review):  # clean a review using stop words and useless punctuations
         review = review.lower()

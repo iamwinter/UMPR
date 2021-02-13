@@ -53,7 +53,7 @@ python main.py
         <td>-</td>
         <td>-</td>
         <td>-</td>
-        <td>-</td>
+        <td>1.117017</td>
         <td>-</td>
     </tr>
     <tr>

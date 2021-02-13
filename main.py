@@ -51,9 +51,10 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
 if __name__ == '__main__':
     config = Config()
     print(config)
-    print(f'{date()}## Load word embedding and dataset...')
+    print(f'{date()}## Load word embedding...')
     word_emb, word_dict = load_embedding(config.word2vec_file)
 
+    print(f'{date()}## Load dataset...')
     train_dataset = Dataset(config.train_file, word_dict, config)
     valid_dataset = Dataset(config.valid_file, word_dict, config)
     test_dataset = Dataset(config.test_file, word_dict, config)

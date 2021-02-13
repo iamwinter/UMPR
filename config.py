@@ -18,10 +18,11 @@ class Config:
     test_file = 'data/music/test.csv'
     saved_model = 'model/best_model.pt'
 
-    review_count = 10
-    review_length = 30
-    lowest_review_count = 2
     PAD_WORD = '<UNK>'
+    sent_count = 10  # number of sentence per user/item
+    ui_sent_count = 2  # number of sentence in a review that u to i
+    sent_length = 20  # length of per sentence
+    lowest_sent_count = 2
 
     gru_hidden_size = 64  # R-net. It's u in paper
     self_attention_hidden_size = 64  # S-net. It's us in paper
