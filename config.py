@@ -24,8 +24,12 @@ class Config:
     sent_length = 20  # length of per sentence
     lowest_sent_count = 2
 
-    gru_hidden_size = 64  # R-net. It's u in paper
-    self_attention_hidden_size = 64  # S-net. It's us in paper
+    gru_size = 64  # R-net. 64. It's u in paper
+    self_atte_size = 64  # S-net. 64. It's us in paper
+    kernel_count = 120  # For CNN of C-net. 120
+    kernel_size = 3  # For CNN of C-net. 原文说该值=1 2 3分别对应40个filters，共120个filters
+    view_size = 10  # multi-view size of C-net. 原文没说最佳值
+    threshold = 0.35  # threshold of C-net
 
     def __init__(self):
         attributes = inspect.getmembers(self, lambda a: not inspect.isfunction(a))

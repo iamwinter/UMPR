@@ -5,6 +5,8 @@ Implementation for the paper：
  "Recommendation by Users' Multi-modal Preferences for Smart City Applications."
  IEEE Transactions on Industrial Informatics (2020).
 
+ToDo: C-Net公用；Visual-Net。
+
 # Environments
   + python 3.8
   + pytorch 1.7
@@ -35,6 +37,10 @@ python main.py
 
 # Experiment
 
+<p align="center" style="margin: 0">
+Table 1. 
+Performance comparison (mean squared error) on several datasets.
+</p>
 <table align="center">
     <tr>
         <th>Dataset(number of reviews)</th>
@@ -72,9 +78,6 @@ python main.py
         <td>2.041674</td>
     </tr>
 </table>
-<p align="center" style="font-weight:bold;">
-Performance comparison (mean squared error) on several datasets.
-</p>
 
 **MF**: General Matrix Factorization.
 [Details](https://github.com/iamwinter/MatrixFactorization)
