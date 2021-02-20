@@ -17,7 +17,7 @@ Implementation for the paper：
 For example: `data/Digital_Music_5.json`.
 Then you should execute following command to create train/validation/test dataset.
 ```shell script
-python data_preprocess.py --data_path Digital_Music_5.json --data_source amazon --train_rate 0.8 --save_dir ./music
+python data_process.py --data_path Digital_Music_5.json --data_source amazon --train_rate 0.8 --save_dir ./music
 ```
 
 # Word Embedding

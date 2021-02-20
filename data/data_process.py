@@ -58,7 +58,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_dir', dest='save_dir', default='./music')
     args = parser.parse_args()
 
-    col_name = ['reviewerID', 'asin', 'reviewText', 'overall']
+    col_name = ['reviewerID', 'asin', 'reviewText', 'overall']  # default amazon
     if args.data_source == 'yelp':
         col_name = ['user_id', 'business_id', 'text', 'stars']
     os.makedirs(args.save_dir, exist_ok=True)
