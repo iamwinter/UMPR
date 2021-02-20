@@ -5,8 +5,6 @@ Implementation for the paper：
  "Recommendation by Users' Multi-modal Preferences for Smart City Applications."
  IEEE Transactions on Industrial Informatics (2020).
 
-ToDo: C-Net公用；Visual-Net。
-
 # Environments
   + python 3.8
   + pytorch 1.7
@@ -16,7 +14,7 @@ ToDo: C-Net公用；Visual-Net。
 1. Amazon(2014) http://jmcauley.ucsd.edu/data/amazon/links.html
 2. Yelp(2020) https://www.yelp.com/dataset
 
-For example: `data/reviews_Clothing_Shoes_and_Jewelry_5.json.gz`.
+For example: `data/Digital_Music_5.json`.
 Then you should execute following command to create train/validation/test dataset.
 ```shell script
 python data_preprocess.py --data_path Digital_Music_5.json --data_source amazon --train_rate 0.8 --save_dir ./music

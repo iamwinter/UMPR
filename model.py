@@ -135,6 +135,14 @@ class ControlNet(nn.Module):
         return c_u, c_i, prefer_pos, prefer_neg  # (batch_size, view_size)
 
 
+class VisualNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self):
+        pass
+
+
 class UMPR(nn.Module):
     def __init__(self, config, word_emb):
         super(UMPR, self).__init__()
