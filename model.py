@@ -91,11 +91,12 @@ class ReviewNet(nn.Module):
         self.linear_i = nn.Linear(gru_size * 4, gru_size * 2, bias=False)
 
     def forward(self, user_emb, item_emb):
-        sent_length = user_emb.shape[-2]
+        u_s_length = user_emb.shape[-2]
+        i_s_length = item_emb.shape[-2]
 
         gru_u, gru_i, soft_u, soft_i, atte_u, atte_i = self.r_net(user_emb, item_emb)
-        _, sentiment_u = self.s_net_u(gru_u, soft_u, sent_length)
-        _, sentiment_i = self.s_net_i(gru_i, soft_i, sent_length)
+        _, sentiment_u = self.s_net_u(gru_u, soft_u, u_s_length)
+        _, sentiment_i = self.s_net_i(gru_i, soft_i, i_s_length)
 
         # Textual Matching
         repr_u = torch.cat([atte_u, sentiment_u], dim=-1)  # formula (7)
@@ -115,12 +116,12 @@ class ControlNet(nn.Module):
         )
 
     def forward(self, user_emb, item_emb, ui_emb):
-        sent_length = user_emb.shape[-2]
+        ui_s_length = ui_emb.shape[-2]
 
         gru_repr, view_possibility, c_net_out = self.c_net(ui_emb)
         _, _, c_u = self.c_net(user_emb)
         _, _, c_i = self.c_net(item_emb)
-        s, _ = self.s_net(gru_repr, view_possibility, sent_length)
+        s, _ = self.s_net(gru_repr, view_possibility, ui_s_length)
         senti_score = self.ss_net(s)  # out(batch_size, s_count, 1)
         view_score = (senti_score * (view_possibility ** 2)).sum(dim=-2) / (view_possibility ** 2).sum(dim=-2)  # (17)
         q_p = torch.zeros_like(view_score)
@@ -157,7 +158,7 @@ class UMPR(nn.Module):
             nn.ReLU()
         )
 
-    def forward(self, user_reviews, item_reviews, ui_reviews):
+    def forward(self, user_reviews, item_reviews, ui_reviews, photos):
         user_emb = self.embedding(user_reviews)  # (batch_size, sent_count, sent_length, emb_size)
         item_emb = self.embedding(item_reviews)
         ui_emb = self.embedding(ui_reviews)

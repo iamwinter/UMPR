@@ -13,9 +13,7 @@ class Config:
     learning_rate_decay = 0.99
 
     word2vec_file = 'embedding/glove.6B.50d.txt'
-    train_file = 'data/music/train.csv'
-    valid_file = 'data/music/valid.csv'
-    test_file = 'data/music/test.csv'
+    data_dir = 'data/music_small'
     saved_model = 'model/best_model.pt'
 
     PAD_WORD = '<UNK>'
@@ -23,6 +21,7 @@ class Config:
     ui_sent_count = 2  # number of sentence in a review that u to i
     sent_length = 20  # length of per sentence
     lowest_sent_count = 2
+    min_photo_count = 1
 
     gru_size = 64  # R-net. 64. It's u in paper
     self_atte_size = 64  # S-net. 64. It's us in paper

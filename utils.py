@@ -1,7 +1,26 @@
+import os
 import time
+from collections import defaultdict
+from concurrent.futures import as_completed
+from concurrent.futures.thread import ThreadPoolExecutor
+
+import numpy
+from skimage import io, transform
 import pandas as pd
 import torch
 from torch.nn import functional as F
+
+
+def date(f='%Y-%m-%d %H:%M:%S'):
+    return time.strftime(f, time.localtime())
+
+
+def process_bar(current, total, auto_rm=True):
+    bar = '=' * int(current / total * 50)
+    bar = '\r{}/{}|{}| {:.1%} | '.format(current, total, bar.ljust(50), current / total)
+    print(bar, end='', flush=True)
+    if current == total:
+        print(end=('\r' + ' ' * len(bar) + '\r') if auto_rm else '\n', flush=True)
 
 
 def load_embedding(word2vec_file):
@@ -18,16 +37,48 @@ def load_embedding(word2vec_file):
     return word_emb, word_dict
 
 
-def date(f='%Y-%m-%d %H:%M:%S'):
-    return time.strftime(f, time.localtime())
+def load_photos(photos_dir, resize=(64, 64), max_workers=8):
+    paths = []
+    for name in os.listdir(photos_dir):
+        path = os.path.join(photos_dir, name)
+        if os.path.isfile(path) and name.endswith('jpg'):
+            paths.append(path)
+
+    def load_image(img_path):
+        try:
+            image = io.imread(img_path)
+            image = transform.resize(image, output_shape=resize)
+            return os.path.basename(img_path)[:-4], image
+        except Exception:
+            # print(f'{date()}#### Damaged picture: {img_path}')
+            return img_path, None
+
+    print(f'{date()}#### Start using multithreading to read {len(paths)} pictures!')
+    pool = ThreadPoolExecutor(max_workers=max_workers)
+    tasks = [pool.submit(load_image, path) for path in paths]
+
+    photos_dict = dict()
+    damaged = []
+    for i, task in enumerate(as_completed(tasks)):
+        name, photo = task.result()
+        if photo is not None:
+            photos_dict[name] = photo
+        else:
+            damaged.append(name)
+        process_bar(i + 1, len(tasks))
+
+    if len(damaged) > 0:
+        print(f'#### Pictures that failed to download: ', damaged)
+    return photos_dict
 
 
 def predict_mse(model, dataloader):
+    device = next(model.parameters()).device
     mse, sample_count = 0, 0
     with torch.no_grad():
         for batch in dataloader:
-            user_reviews, item_reviews, reviews, ratings = map(lambda x: x.to(next(model.parameters()).device), batch)
-            predict = model(user_reviews, item_reviews, reviews)
+            user_reviews, item_reviews, reviews, photos, ratings = map(lambda x: x.to(device), batch)
+            predict = model(user_reviews, item_reviews, reviews, photos)
             mse += F.mse_loss(predict, ratings, reduction='sum').item()
             sample_count += len(ratings)
     return mse / sample_count
@@ -76,26 +127,28 @@ class Dataset(torch.utils.data.Dataset):
         self.PAD_WORD_idx = word_dict[config.PAD_WORD]
         self.SPLIT_idx = word_dict['.']  # split to sentences
 
-        df = pd.read_csv(data_path, header=None, names=['userID', 'itemID', 'review', 'rating'])
+        df = pd.read_csv(data_path)
         df['review'] = df['review'].apply(self._sent2id)
-        self.delete_idx = set()  # Save the indices of empty samples, delete them at last.
+        self.retain_idx = [True] * len(df)  # Save the indices of empty samples, delete them at last.
         user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u for i).
-        item_reviews = self._get_reviews(df, 'itemID', 'userID')
+        item_reviews = self._get_reviews(df, 'item_num', 'user_num')
         ui_reviews = self._get_rui(df['review'])
-        retain_idx = [idx for idx in range(len(df)) if idx not in self.delete_idx]
+        photos_id = self._load_photos_id(os.path.join(config.data_dir, 'photos.json'), df['itemID'])
 
-        self.user_reviews = user_reviews[retain_idx]
-        self.item_reviews = item_reviews[retain_idx]
-        self.ui_reviews = ui_reviews[retain_idx]
-        self.rating = torch.Tensor(df['rating'].to_list())[retain_idx]
+        self.user_reviews = user_reviews[self.retain_idx]
+        self.item_reviews = item_reviews[self.retain_idx]
+        self.ui_reviews = ui_reviews[self.retain_idx]
+        self.photos_id = photos_id[self.retain_idx]
+        self.rating = numpy.asarray(df['rating'])[self.retain_idx]
 
     def __getitem__(self, idx):
-        return self.user_reviews[idx], self.item_reviews[idx], self.ui_reviews[idx], self.rating[idx]
+        return self.user_reviews[idx], self.item_reviews[idx], self.ui_reviews[idx], \
+               self.photos_id[idx], self.rating[idx]
 
     def __len__(self):
         return self.rating.shape[0]
 
-    def _get_reviews(self, df, lead='userID', costar='itemID'):
+    def _get_reviews(self, df, lead='user_num', costar='item_num'):
         # For every sample(user,item), gather reviews for user/item.
         reviews_by_lead = dict(list(df[[costar, 'review']].groupby(df[lead])))  # Information for every user/item
         ret_sentences = []
@@ -104,18 +157,18 @@ class Dataset(torch.utils.data.Dataset):
             reviews = df_data['review'][df_data[costar] != costar_id].to_list()  # get reviews without review u for i.
             sentences = [sent for r in reviews for sent in split_list(r, self.SPLIT_idx)]  # sentence list
             if len(sentences) < self.lowest_s_count:
-                self.delete_idx.add(idx)
-            sentences = pad_list(sentences, self.s_count, self.s_length, self.PAD_WORD_idx)
+                self.retain_idx[idx] = False
+            # sentences = pad_list(sentences, self.s_count, self.s_length, self.PAD_WORD_idx)
             ret_sentences.append(sentences)
-        return torch.LongTensor(ret_sentences)
+        return numpy.asarray(ret_sentences, dtype=object)
 
     def _get_rui(self, reviews):
         ui_reviews = []
         for review in reviews:
             r = split_list(review, self.SPLIT_idx)
-            r = pad_list(r, self.ui_s_count, self.s_length, self.PAD_WORD_idx)
+            # r = pad_list(r, self.ui_s_count, self.s_length, self.PAD_WORD_idx)
             ui_reviews.append(r)
-        return torch.LongTensor(ui_reviews)
+        return numpy.asarray(ui_reviews, dtype=object)
 
     def _sent2id(self, sent):  # Split a sentence into words, and map each word to a unique number by dict.
         if not isinstance(sent, str):
@@ -127,3 +180,39 @@ class Dataset(torch.utils.data.Dataset):
             else:
                 wids.append(self.PAD_WORD_idx)
         return wids
+
+    def _load_photos_id(self, photos_json, item_id_list):
+        photo_df = pd.read_json(photos_json)[['business_id', 'photo_id']]
+        item_photos_id = defaultdict(list)
+        for b, p in zip(photo_df['business_id'], photo_df['photo_id']):
+            item_photos_id[b].append(p)
+
+        photos_id = []
+        for idx, iid in enumerate(item_id_list):
+            item_photos = []
+            for pid in item_photos_id[iid]:
+                item_photos.append(pid)
+            if len(item_photos) < 1:  # Too few photos
+                self.retain_idx[idx] = False
+            photos_id.append(item_photos)
+        return numpy.asarray(photos_id, dtype=object)
+
+
+def batch_loader(batch_list, config, photos_dict):
+    photo_size = list(photos_dict.values())[0].shape
+    u_sents, i_sents, ui_sents, photos, ratings = [], [], [], [], []
+    for u_s, i_s, ui_s, p_ids, rating in batch_list:
+        u_sents.append(pad_list(u_s, config.sent_count, config.sent_length))
+        i_sents.append(pad_list(i_s, config.sent_count, config.sent_length))
+        ui_sents.append(pad_list(ui_s, config.ui_sent_count, config.sent_length))
+        cur_photos = []
+        for pid in p_ids:
+            cur_photos.append(photos_dict[pid])
+            if len(cur_photos) >= config.min_photo_count:
+                break
+        while len(cur_photos) < config.min_photo_count:
+            cur_photos.append(numpy.zeros(photo_size))
+        photos.append(cur_photos)
+        ratings.append(rating)
+    return torch.LongTensor(u_sents), torch.LongTensor(i_sents), torch.LongTensor(ui_sents), \
+           torch.Tensor(photos), torch.Tensor(ratings)

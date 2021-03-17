@@ -5,7 +5,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from config import Config
-from utils import Dataset, date, predict_mse, load_embedding
+from utils import Dataset, date, predict_mse, load_embedding, batch_loader, load_photos
 from model import UMPR
 
 
@@ -24,8 +24,8 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
         model.train()
         total_loss, total_samples = 0, 0
         for batch in train_dataloader:
-            user_reviews, item_reviews, reviews, ratings = map(lambda x: x.to(config.device), batch)
-            predict = model(user_reviews, item_reviews, reviews)
+            user_reviews, item_reviews, reviews, photos, ratings = map(lambda x: x.to(config.device), batch)
+            predict = model(user_reviews, item_reviews, reviews, photos)
             loss = F.mse_loss(predict, ratings, reduction='mean')
             opt.zero_grad()
             loss.backward()
@@ -54,17 +54,25 @@ if __name__ == '__main__':
     print(f'{date()}## Load word embedding...')
     word_emb, word_dict = load_embedding(config.word2vec_file)
 
-    print(f'{date()}## Load dataset...')
-    train_dataset = Dataset(config.train_file, word_dict, config)
-    valid_dataset = Dataset(config.valid_file, word_dict, config)
-    test_dataset = Dataset(config.test_file, word_dict, config)
-    train_dlr = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
-    valid_dlr = DataLoader(valid_dataset, batch_size=config.batch_size)
-    test_dlr = DataLoader(test_dataset, batch_size=config.batch_size)
+    print(f'{date()}## Load all of photos')
+    photos_dict = load_photos(os.path.join(config.data_dir, 'photos'))
+    print(f'{date()}## Loaded {len(photos_dict)} intact photos.')
+
+    print(f'{date()}#### Loading train dataset.')
+    train_dataset = Dataset(os.path.join(config.data_dir, 'train.csv'), word_dict, config)
+    print(f'{date()}#### Loading valid dataset.')
+    valid_dataset = Dataset(os.path.join(config.data_dir, 'valid.csv'), word_dict, config)
+    print(f'{date()}#### Loading test dataset.')
+    test_dataset = Dataset(os.path.join(config.data_dir, 'test.csv'), word_dict, config)
+
+    train_dlr = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True,
+                           collate_fn=lambda x: batch_loader(x, config, photos_dict))
+    valid_dlr = DataLoader(valid_dataset, batch_size=config.batch_size,
+                           collate_fn=lambda x: batch_loader(x, config, photos_dict))
+    test_dlr = DataLoader(test_dataset, batch_size=config.batch_size,
+                          collate_fn=lambda x: batch_loader(x, config, photos_dict))
 
     Model = UMPR(config, word_emb).to(config.device)
-    del word_emb, word_dict, train_dataset, valid_dataset, test_dataset
-
     if '/' in config.saved_model:
         os.makedirs(os.path.dirname(config.saved_model), exist_ok=True)  # mkdir if not exist
     train(train_dlr, valid_dlr, Model, config, config.saved_model)

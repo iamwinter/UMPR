@@ -6,31 +6,57 @@ Implementation for the paper：
  IEEE Transactions on Industrial Informatics (2020).
 
 # Environments
-  + python 3.8
-  + pytorch 1.7
++ python 3.8
++ pytorch 1.7
++ scikit-image 0.18.1
 
-# Dataset
+# Dataset and Word Embedding
 
-1. Amazon(2014) http://jmcauley.ucsd.edu/data/amazon/links.html
-2. Yelp(2020) https://www.yelp.com/dataset
+```
+UMPR
+│
+├─data
+│  │
+│  ├─amazonCSJ
+│  │       reviews_Clothing_Shoes_and_Jewelry.json.gz
+│  │       meta_Clothing_Shoes_and_Jewelry.json.gz
+│  │
+│  ├─music
+│  │       reviews_Digital_Music.json.gz
+│  │       meta_Digital_Music.json.gz
+│  │
+│  └─yelp
+│     │    yelp_academic_dataset_review.json
+│     │    photos.json
+│     │
+│     └─photos
+│              *.jpg
+│
+└─embedding
+           glove.6B.50d.txt
+           punctuations.txt
+           stopwords.txt
+```
++ Download Link
+  + Dataset Amazon(2014) http://jmcauley.ucsd.edu/data/amazon/links.html
+  + Dataset Yelp(2020) https://www.yelp.com/dataset
+  + Word Embedding https://nlp.stanford.edu/projects/glove
 
-For example: `data/Digital_Music_5.json`.
-Then you should execute following command to create train/validation/test dataset.
++ You should execute `data_process.py` to create train/validation/test dataset.
 ```shell script
-python data_process.py --data_path Digital_Music_5.json --data_source amazon --train_rate 0.8 --save_dir ./music
+python data_process.py --data_path ./music/reviews_Digital_Music.json.gz --data_source amazon --train_rate 0.8 --save_dir ./music
 ```
 
-# Word Embedding
-
-+ Download from https://nlp.stanford.edu/projects/glove
-
-For example:`embedding/glove.6B.50d.txt`
++ For amazon, you should execute `down_amazon_photos.py` to download photos.
+```shell script
+python down_amazon_photos.py --meta_path ./music/meta_Digital_Music.json.gz
+```
 
 # Running
 
 Train and evaluate the model:
-```
-python main.py
+```shell script
+python main.py --device cuda:0 --data_dir ./data/music
 ```
 
 # Experiment
