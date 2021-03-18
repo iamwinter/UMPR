@@ -8,7 +8,6 @@ Implementation for the paper：
 # Environments
 + python 3.8
 + pytorch 1.7
-+ scikit-image 0.18.1
 
 # Dataset and Word Embedding
 
