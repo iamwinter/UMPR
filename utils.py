@@ -87,8 +87,8 @@ def load_photos(photos_dir, resize=(64, 64), max_workers=8):
             damaged.append(name)
         process_bar(i + 1, len(tasks))
 
-    if len(damaged) > 0:
-        print(f'{date()}#### Pictures that failed to open: ', damaged)
+    for name in damaged:
+        print(f'## Failed to open {name}.jpg')
     return photos_dict
 
 
@@ -189,7 +189,7 @@ class Dataset(torch.utils.data.Dataset):
         return wids
 
     def _load_photos_id(self, photos_json, item_id_list):
-        photo_df = pd.read_json(photos_json)[['business_id', 'photo_id']]
+        photo_df = pd.read_json(photos_json, orient='records', lines=True)[['business_id', 'photo_id']]
         item_photos_id = defaultdict(list)
         for b, p in zip(photo_df['business_id'], photo_df['photo_id']):
             item_photos_id[b].append(p)

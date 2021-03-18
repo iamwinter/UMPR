@@ -43,14 +43,18 @@ UMPR
 
 # Running
 
-+ You should execute `data_process.py` to create train/validation/test dataset.
++ Firstly, execute `data_process.py` to generate 
+`train.csv`,`valid.csv`,`test.csv`,`photos.json`.
 ```shell script
-python data/data_process.py --data_type amazon --data_path ./data/music/reviews_Digital_Music.json.gz --save_dir ./data/music --train_rate 0.8
+python data/data_process.py --data_type amazon \
+    --data_path ./data/music/reviews_Digital_Music.json.gz \
+    --meta_path ./data/music/meta_Digital_Music.json.gz \
+    --save_dir ./data/music --train_rate 0.8
 ```
 
-+ For amazon, you should execute `down_amazon_photos.py` to download photos.
++ For amazon(**not yelp**), execute `down_photos.py` to download `photos/*.jpg`.
 ```shell script
-python data/down_amazon_photos.py --meta_path ./data/music/meta_Digital_Music.json.gz
+python data/down_photos.py --photos_json ./data/music/photos.json
 ```
 
 + Train and evaluate the model:
