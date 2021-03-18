@@ -52,8 +52,11 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
 if __name__ == '__main__':
     config = Config()
 
-    os.makedirs('./log', exist_ok=True)
-    logger = get_logger(f'./log/{date("%Y%m%d_%H%M%S")}.txt')
+    log_path = f'./log/{date("%Y%m%d_%H%M%S")}.txt'
+    model_path = f'./model/{date("%Y%m%d_%H%M%S")}.pt'
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    logger = get_logger(log_path)
     logger.info(config)
 
     logger.debug('Load word embedding...')
@@ -78,9 +81,7 @@ if __name__ == '__main__':
                           collate_fn=lambda x: batch_loader(x, config, photos_dict))
 
     Model = UMPR(config, word_emb).to(config.device)
-    if '/' in config.saved_model:
-        os.makedirs(os.path.dirname(config.saved_model), exist_ok=True)  # mkdir if not exist
-    train(train_dlr, valid_dlr, Model, config, config.saved_model)
+    train(train_dlr, valid_dlr, Model, config, model_path)
 
-    test_loss = predict_mse(torch.load(config.saved_model), test_dlr)
+    test_loss = predict_mse(torch.load(model_path), test_dlr)
     logger.info(f"Test end, test mse is {test_loss:.6f}")

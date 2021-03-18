@@ -14,7 +14,6 @@ class Config:
 
     word2vec_file = 'embedding/glove.6B.50d.txt'
     data_dir = 'data/music'
-    saved_model = 'model/best_model.pt'
 
     PAD_WORD = '<UNK>'
     sent_count = 10  # number of sentence per user/item
