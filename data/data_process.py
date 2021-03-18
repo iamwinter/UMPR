@@ -8,8 +8,6 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from nltk.tokenize import WordPunctTokenizer
 
-os.chdir(sys.path[0])
-
 
 def process_dataset(json_path, select_cols, train_rate, csv_path):
     print('#### Read the json file...')
@@ -29,9 +27,9 @@ def process_dataset(json_path, select_cols, train_rate, csv_path):
     df['user_num'] = df.groupby(df['userID']).ngroup()
     df['item_num'] = df.groupby(df['itemID']).ngroup()
 
-    with open('../embedding/stopwords.txt') as f:  # stop words
+    with open(os.path.join(sys.path[0], '../embedding/stopwords.txt')) as f:  # stop words
         stop_words = set(f.read().splitlines())
-    with open('../embedding/punctuations.txt') as f:  # useless punctuations
+    with open(os.path.join(sys.path[0], '../embedding/punctuations.txt')) as f:  # useless punctuations
         punctuations = set(f.read().splitlines())
         punctuations.remove('.')
 
@@ -65,18 +63,18 @@ def process_dataset(json_path, select_cols, train_rate, csv_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', dest='data_path', default='./music_small/Digital_Music_5.json.gz')
-    parser.add_argument('--data_source', dest='data_source', default='amazon')
+    parser.add_argument('--data_type', dest='data_type', default='amazon')
+    parser.add_argument('--data_path', dest='data_path', default=os.path.join(sys.path[0], 'music/reviews_Digital_Music.json.gz'))
+    parser.add_argument('--save_dir', dest='save_dir', default=os.path.join(sys.path[0], 'music'))
     parser.add_argument('--train_rate', dest='train_rate', default=0.8)
-    parser.add_argument('--save_dir', dest='save_dir', default='./music_small')
     args = parser.parse_args()
 
     col_name = ['reviewerID', 'asin', 'reviewText', 'overall']  # default amazon
-    if args.data_source == 'yelp':
+    if args.data_type == 'yelp':
         col_name = ['user_id', 'business_id', 'text', 'stars']
     os.makedirs(args.save_dir, exist_ok=True)
 
     start_time = time.perf_counter()
-    process_dataset(args.data_path, col_name, args.train_rate, args.save_dir)
+    process_dataset(args.data_path, col_name, float(args.train_rate), args.save_dir)
     end_time = time.perf_counter()
     print(f'## preprocess.py: Data loading complete! Time used {end_time - start_time:.0f} seconds.')

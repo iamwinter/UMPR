@@ -1,26 +1,46 @@
 import os
+import sys
 import time
+import logging
 from collections import defaultdict
 from concurrent.futures import as_completed
 from concurrent.futures.thread import ThreadPoolExecutor
 
 import numpy
-from skimage import io, transform
+from PIL import Image
 import pandas as pd
 import torch
 from torch.nn import functional as F
+
+
+def get_logger(log_file=None, file_level=logging.INFO, stdout_level=logging.DEBUG, logger_name=__name__):
+    logging.root.setLevel(0)
+    formatter = logging.Formatter('%(asctime)s %(levelname)5s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    _logger = logging.getLogger(logger_name)
+
+    if log_file is not None:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(level=file_level)
+        file_handler.setFormatter(formatter)
+        _logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setLevel(level=stdout_level)
+    stream_handler.setFormatter(formatter)
+    _logger.addHandler(stream_handler)
+    return _logger
 
 
 def date(f='%Y-%m-%d %H:%M:%S'):
     return time.strftime(f, time.localtime())
 
 
-def process_bar(current, total, auto_rm=True):
+def process_bar(current, total, prefix='', auto_rm=True):
     bar = '=' * int(current / total * 50)
-    bar = '\r{}/{}|{}| {:.1%} | '.format(current, total, bar.ljust(50), current / total)
-    print(bar, end='', flush=True)
-    if current == total:
-        print(end=('\r' + ' ' * len(bar) + '\r') if auto_rm else '\n', flush=True)
+    bar = f'{prefix}|{bar.ljust(50)}| ({current}/{total}) {current / total:.1%} | '
+    print(bar, end='\r', flush=True)
+    if auto_rm and current == total:
+        print(end=('\r' + ' ' * len(bar) + '\r'), flush=True)
 
 
 def load_embedding(word2vec_file):
@@ -46,14 +66,14 @@ def load_photos(photos_dir, resize=(64, 64), max_workers=8):
 
     def load_image(img_path):
         try:
-            image = io.imread(img_path)
-            image = transform.resize(image, output_shape=resize)
+            image = Image.open(img_path).convert('RGB').resize(resize)
+            image = numpy.asarray(image)
             return os.path.basename(img_path)[:-4], image
         except Exception:
             # print(f'{date()}#### Damaged picture: {img_path}')
             return img_path, None
 
-    print(f'{date()}#### Start using multithreading to read {len(paths)} pictures!')
+    # print(f'{date()}#### Start using multithreading to read {len(paths)} pictures!')
     pool = ThreadPoolExecutor(max_workers=max_workers)
     tasks = [pool.submit(load_image, path) for path in paths]
 
@@ -68,7 +88,7 @@ def load_photos(photos_dir, resize=(64, 64), max_workers=8):
         process_bar(i + 1, len(tasks))
 
     if len(damaged) > 0:
-        print(f'#### Pictures that failed to download: ', damaged)
+        print(f'{date()}#### Pictures that failed to open: ', damaged)
     return photos_dict
 
 
@@ -76,24 +96,19 @@ def predict_mse(model, dataloader):
     device = next(model.parameters()).device
     mse, sample_count = 0, 0
     with torch.no_grad():
-        for batch in dataloader:
+        for i, batch in enumerate(dataloader):
             user_reviews, item_reviews, reviews, photos, ratings = map(lambda x: x.to(device), batch)
             predict = model(user_reviews, item_reviews, reviews, photos)
             mse += F.mse_loss(predict, ratings, reduction='sum').item()
             sample_count += len(ratings)
+            process_bar(i, len(dataloader), prefix=' Evaluate ')
     return mse / sample_count
 
 
-def split_list(L, key):
-    """
-    split a list by key
-    :param L: list[]
-    :param key:
-    :return: 2-dim list
-    """
+def split_list(arr, key):  # split a list by key
     result = []
     temp = []
-    for x in L:
+    for x in arr:
         if x == key:
             if len(temp) > 0:
                 result.append(temp)
@@ -103,18 +118,10 @@ def split_list(L, key):
     return result
 
 
-def pad_list(L, dim1, dim2, pad_elem=0):
-    """
-    二维list调整长宽，截长补短
-    :param L:
-    :param dim1:
-    :param dim2:
-    :param pad_elem:
-    :return: 二维list
-    """
-    L = L[:dim1] + [[pad_elem] * dim2] * (dim1 - len(L))  # dim 1
-    L = [r[:dim2] + [pad_elem] * (dim2 - len(r)) for r in L]  # dim 2
-    return L
+def pad_list(arr, dim1, dim2, pad_elem=0):  # 二维list调整长宽，截长补短
+    arr = arr[:dim1] + [[pad_elem] * dim2] * (dim1 - len(arr))  # dim 1
+    arr = [r[:dim2] + [pad_elem] * (dim2 - len(r)) for r in arr]  # dim 2
+    return arr
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -207,7 +214,8 @@ def batch_loader(batch_list, config, photos_dict):
         ui_sents.append(pad_list(ui_s, config.ui_sent_count, config.sent_length))
         cur_photos = []
         for pid in p_ids:
-            cur_photos.append(photos_dict[pid])
+            if pid in photos_dict:  # It's possible that corresponding photo failed to download.
+                cur_photos.append(photos_dict[pid])
             if len(cur_photos) >= config.min_photo_count:
                 break
         while len(cur_photos) < config.min_photo_count:

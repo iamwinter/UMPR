@@ -37,24 +37,24 @@ UMPR
            punctuations.txt
            stopwords.txt
 ```
-+ Download Link
-  + Dataset Amazon(2014) http://jmcauley.ucsd.edu/data/amazon/links.html
-  + Dataset Yelp(2020) https://www.yelp.com/dataset
-  + Word Embedding https://nlp.stanford.edu/projects/glove
+
++ Dataset Amazon(2014) http://jmcauley.ucsd.edu/data/amazon/links.html
++ Dataset Yelp(2020) https://www.yelp.com/dataset
++ Word Embedding https://nlp.stanford.edu/projects/glove
+
+# Running
 
 + You should execute `data_process.py` to create train/validation/test dataset.
 ```shell script
-python data_process.py --data_path ./music/reviews_Digital_Music.json.gz --data_source amazon --train_rate 0.8 --save_dir ./music
+python data/data_process.py --data_type amazon --data_path ./data/music/reviews_Digital_Music.json.gz --save_dir ./data/music --train_rate 0.8
 ```
 
 + For amazon, you should execute `down_amazon_photos.py` to download photos.
 ```shell script
-python down_amazon_photos.py --meta_path ./music/meta_Digital_Music.json.gz
+python data/down_amazon_photos.py --meta_path ./data/music/meta_Digital_Music.json.gz
 ```
 
-# Running
-
-Train and evaluate the model:
++ Train and evaluate the model:
 ```shell script
 python main.py --device cuda:0 --data_dir ./data/music
 ```

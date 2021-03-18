@@ -13,7 +13,6 @@ from concurrent.futures.thread import ThreadPoolExecutor
 import pandas as pd
 from urllib.request import urlretrieve
 
-os.chdir(sys.path[0])
 
 socket.setdefaulttimeout(20)
 opener = urllib.request.build_opener()
@@ -36,12 +35,12 @@ def download_photo(url, path):
         try:
             urlretrieve(url, path)
             # print(f'#### Downloaded {os.path.basename(path)} {url}')
-            return True
+            return True, None, None
         except Exception:  # 爬取图片失败，短暂sleep后重新爬取
             # print(f'#### Download failed. Reload: {url}')
             time.sleep(0.5)
-    print(f'#### Download failed: {os.path.basename(path)} {url}')
-    return False
+    # print(f'#### Download failed: {os.path.basename(path)} {url}')
+    return False, url, path
 
 
 def download_photos(meta_path, max_workers=256):
@@ -83,21 +82,26 @@ def download_photos(meta_path, max_workers=256):
     pool = ThreadPoolExecutor(max_workers=max_workers)
     tasks = []
     for name, url in zip(df['photo_id'], df['imUrl']):
-        path = os.path.join(photo_dir, name+'.jpg')
+        path = os.path.join(photo_dir, name + '.jpg')
         if not os.path.exists(path) or not is_valid_jpg(path):
             task = pool.submit(download_photo, url, path)
             tasks.append(task)
 
-    success = 0
+    failed = []
     for i, task in enumerate(as_completed(tasks)):
-        success += task.result()
+        res, url, path = task.result()
+        if not res:
+            failed.append((url, path))
         print(f'#### Tried {i}/{len(tasks)} photos!', end='\r', flush=True)
-    print(f'#### {success} images downloaded successfully!')
+
+    if len(failed) > 0:
+        print(f'#### Pictures that failed to download: ', failed)
+    print(f'#### {len(tasks) - len(failed)} images were downloaded successfully!')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--meta_path', dest='meta_path', default='./music_small/meta_Digital_Music.json.gz')
+    parser.add_argument('--meta_path', dest='meta_path', default=os.path.join(sys.path[0], 'music/meta_Digital_Music.json.gz'))
     args = parser.parse_args()
 
     download_photos(args.meta_path)

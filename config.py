@@ -13,7 +13,7 @@ class Config:
     learning_rate_decay = 0.99
 
     word2vec_file = 'embedding/glove.6B.50d.txt'
-    data_dir = 'data/music_small'
+    data_dir = 'data/music'
     saved_model = 'model/best_model.pt'
 
     PAD_WORD = '<UNK>'
