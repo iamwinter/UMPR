@@ -101,7 +101,7 @@ def predict_mse(model, dataloader):
             predict = model(user_reviews, item_reviews, reviews, photos)
             mse += F.mse_loss(predict, ratings, reduction='sum').item()
             sample_count += len(ratings)
-            process_bar(i, len(dataloader), prefix=' Evaluate ')
+            process_bar(i+1, len(dataloader), prefix=' Evaluate ')
     return mse / sample_count
 
 
