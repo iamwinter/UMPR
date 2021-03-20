@@ -49,7 +49,8 @@ UMPR
 python data/data_process.py --data_type amazon \
     --data_path ./data/music/reviews_Digital_Music.json.gz \
     --meta_path ./data/music/meta_Digital_Music.json.gz \
-    --save_dir ./data/music --train_rate 0.8
+    --save_dir ./data/music \
+    --train_rate 0.8
 ```
 
 + For amazon(**not yelp**), execute `down_photos.py` to download `photos/*.jpg`.

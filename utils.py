@@ -68,7 +68,7 @@ def load_photos(photos_dir, resize=(64, 64), max_workers=8):
         try:
             image = Image.open(img_path).convert('RGB').resize(resize)
             image = numpy.asarray(image)
-            return os.path.basename(img_path)[:-4], image
+            return os.path.basename(img_path)[:-4], image.transpose((2, 0, 1))
         except Exception:
             # print(f'{date()}#### Damaged picture: {img_path}')
             return img_path, None
@@ -85,7 +85,7 @@ def load_photos(photos_dir, resize=(64, 64), max_workers=8):
             photos_dict[name] = photo
         else:
             damaged.append(name)
-        process_bar(i + 1, len(tasks))
+        process_bar(i + 1, len(tasks), prefix=' Load photos ')
 
     for name in damaged:
         print(f'## Failed to open {name}.jpg')
@@ -98,10 +98,10 @@ def predict_mse(model, dataloader):
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
             user_reviews, item_reviews, reviews, photos, ratings = map(lambda x: x.to(device), batch)
-            predict = model(user_reviews, item_reviews, reviews, photos)
+            predict, loss = model(user_reviews, item_reviews, reviews, photos, ratings)
             mse += F.mse_loss(predict, ratings, reduction='sum').item()
             sample_count += len(ratings)
-            process_bar(i+1, len(dataloader), prefix=' Evaluate ')
+            process_bar(i + 1, len(dataloader), prefix=' Evaluate ')
     return mse / sample_count
 
 
@@ -155,18 +155,26 @@ class Dataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.rating.shape[0]
 
-    def _get_reviews(self, df, lead='user_num', costar='item_num'):
+    def _get_reviews(self, df, lead='user_num', costar='item_num', max_workers=8):
         # For every sample(user,item), gather reviews for user/item.
         reviews_by_lead = dict(list(df[[costar, 'review']].groupby(df[lead])))  # Information for every user/item
-        ret_sentences = []
-        for idx, (lead_id, costar_id) in enumerate(zip(df[lead], df[costar])):
+
+        def gather_review(idx, lead_id, costar_id):
             df_data = reviews_by_lead[lead_id]  # get information of lead, return DataFrame.
-            reviews = df_data['review'][df_data[costar] != costar_id].to_list()  # get reviews without review u for i.
+            reviews = df_data['review'][df_data[costar] != costar_id]  # get reviews without review u for i.
             sentences = [sent for r in reviews for sent in split_list(r, self.SPLIT_idx)]  # sentence list
             if len(sentences) < self.lowest_s_count:
                 self.retain_idx[idx] = False
-            # sentences = pad_list(sentences, self.s_count, self.s_length, self.PAD_WORD_idx)
-            ret_sentences.append(sentences)
+            return idx, sentences
+
+        pool = ThreadPoolExecutor(max_workers=max_workers)
+        tasks = [pool.submit(gather_review, i, x[0], x[1]) for i, x in enumerate(zip(df[lead], df[costar]))]
+
+        ret_sentences = [[]] * len(tasks)
+        for i, task in enumerate(as_completed(tasks)):
+            idx, sents = task.result()
+            ret_sentences[idx] = sents
+            process_bar(i + 1, len(tasks), prefix='Loading sentences ')
         return numpy.asarray(ret_sentences, dtype=object)
 
     def _get_rui(self, reviews):

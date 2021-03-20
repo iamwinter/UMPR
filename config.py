@@ -7,7 +7,7 @@ class Config:
     device = torch.device("cuda:0")
     # device = torch.device("cpu")
     train_epochs = 10
-    batch_size = 128
+    batch_size = 32
     learning_rate = 0.0001
     l2_regularization = 1e-6
     learning_rate_decay = 0.99
@@ -28,6 +28,7 @@ class Config:
     kernel_size = 3  # For CNN of C-net. 原文说该值=1 2 3分别对应40个filters，共120个filters
     view_size = 10  # multi-view size of C-net. 原文没说最佳值
     threshold = 0.35  # threshold of C-net
+    loss_v_rate = 0.1  # rate of loss_v
 
     def __init__(self):
         attributes = inspect.getmembers(self, lambda a: not inspect.isfunction(a))

@@ -1,4 +1,5 @@
 import torch
+import torchvision
 from torch import nn
 
 
@@ -67,14 +68,15 @@ class CNet(nn.Module):
         batch_size = review_emb.shape[0]
         sent_count = review_emb.shape[1]
         sent_length = review_emb.shape[2]
-        gru_repr, hn = self.gru(review_emb.view(batch_size, sent_count*sent_length, -1))
-        cnn_in = gru_repr.reshape(batch_size*sent_count, sent_length, -1).transpose(-1, -2)
+        gru_repr, hn = self.gru(review_emb.view(batch_size, sent_count * sent_length, -1))
+        cnn_in = gru_repr.reshape(batch_size * sent_count, sent_length, -1).transpose(-1, -2)
         cnn_out = self.cnn(cnn_in)
         cnn_out = cnn_out.max(dim=-1)[0]  # (batch_size*sent_count, k_count)
         cnn_out = cnn_out.view(batch_size, sent_count, -1)
 
         linear_out = self.linear(cnn_out)
-        linear_out[linear_out < self.threshold] = 0
+        # linear_out[linear_out < self.threshold] = 0  # 该句导致无法backward，只能用torch.where，原因不明
+        linear_out = torch.where(linear_out < self.threshold, torch.zeros_like(linear_out), linear_out)
         final_repr = torch.sum(linear_out ** 2, dim=-2)  # out(batch_size, view_size)
         return gru_repr, linear_out, final_repr
 
@@ -137,34 +139,61 @@ class ControlNet(nn.Module):
 
 
 class VisualNet(nn.Module):
-    def __init__(self):
+    def __init__(self, view_size):
         super().__init__()
+        self.vgg16 = torchvision.models.vgg16(pretrained=True)
+        vgg_out = 1000  # 1000 is the value that vgg16 output.
+        self.pos_v_emb = nn.Parameter(torch.randn(vgg_out))
+        self.neg_v_emb = nn.Parameter(torch.randn(vgg_out))
+        # The out_size ought be 1. But real view_size of photos is only 1. So let out_size be view_size to increase it.
+        # self.linear = nn.Linear(vgg_out, 1)  # According to original paper.
+        self.linear = nn.Linear(vgg_out, view_size)
 
-    def forward(self):
-        pass
+    def forward(self, images, c_u, c_i):
+        batch_size = images.shape[0]
+        photo_count = images.shape[1]
+        images = images.view(torch.Size([images.shape[0] * images.shape[1]]) + images.shape[2:])  # (-1,C,H,W)
+        img_repr = self.vgg16(images)  # (-1,1000).
+        img_repr = img_repr.view(batch_size, photo_count, -1)  # (b,pc,1000). Original paper:(b,view_size,pc,1000)
+        # According to paper, calculate average for pictures of each view.
+        img_repr = img_repr.mean(dim=-2)  # eq.(10) (b,1000). Original paper:(b,view_size,1000)
+
+        pos_match = torch.tanh(torch.abs(self.linear(self.pos_v_emb) - self.linear(img_repr)))  # eq.(11) \tilde{x^V+}
+        neg_match = torch.tanh(torch.abs(self.linear(self.neg_v_emb) - self.linear(img_repr)))  # (b,view_size)
+
+        final_pos = c_u * c_i * (1 - pos_match)
+        final_neg = c_u * c_i * (1 - neg_match)
+
+        return pos_match, neg_match, final_pos, final_neg
 
 
 class UMPR(nn.Module):
     def __init__(self, config, word_emb):
         super(UMPR, self).__init__()
+        self.loss_v_rate = config.loss_v_rate
         self.embedding = nn.Embedding.from_pretrained(torch.Tensor(word_emb))
 
         self.review_net = ReviewNet(self.embedding.embedding_dim, config.gru_size, config.self_atte_size)
         self.control_net = ControlNet(self.embedding.embedding_dim, config.gru_size, config.kernel_count,
                                       config.kernel_size, config.view_size, config.threshold, config.self_atte_size)
+        self.visual_net = VisualNet(config.view_size)
 
         self.linear_fusion = nn.Sequential(
-            nn.Linear(config.gru_size * 2, 1),
+            nn.Linear(config.gru_size * 2 + config.view_size + config.view_size, 1),
             nn.ReLU()
         )
 
-    def forward(self, user_reviews, item_reviews, ui_reviews, photos):
+    def forward(self, user_reviews, item_reviews, ui_reviews, photos, labels):
         user_emb = self.embedding(user_reviews)  # (batch_size, sent_count, sent_length, emb_size)
         item_emb = self.embedding(item_reviews)
         ui_emb = self.embedding(ui_reviews)
 
-        review_net_repr = self.review_net(user_emb, item_emb)
+        review_net_repr = self.review_net(user_emb, item_emb)  # (batch, 2u) where u is GRU hidden size
         c_u, c_i, prefer_pos, prefer_neg = self.control_net(user_emb, item_emb, ui_emb)
+        pos_match, neg_match, final_pos, final_neg = self.visual_net(photos, c_u, c_i)  # (b,view_size)
 
-        prediction = self.linear_fusion(review_net_repr)
-        return prediction.squeeze(-1)
+        prediction = self.linear_fusion(torch.cat([review_net_repr, final_pos, final_neg], dim=-1)).squeeze(-1)
+        loss_v = torch.mean(prefer_pos.transpose(-1, -2) @ pos_match + prefer_neg.transpose(-1, -2) @ neg_match)  # eq20
+        loss_r = torch.nn.functional.mse_loss(prediction, labels, reduction='mean')
+        loss = loss_r + loss_v * self.loss_v_rate
+        return prediction, loss

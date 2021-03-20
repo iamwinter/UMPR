@@ -1,7 +1,6 @@
 import os
 import time
 import torch
-from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from config import Config
@@ -25,14 +24,13 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
         total_loss, total_samples = 0, 0
         for i, batch in enumerate(train_dataloader):
             user_reviews, item_reviews, reviews, photos, ratings = map(lambda x: x.to(config.device), batch)
-            predict = model(user_reviews, item_reviews, reviews, photos)
-            loss = F.mse_loss(predict, ratings, reduction='mean')
+            predict, loss = model(user_reviews, item_reviews, reviews, photos, ratings)
             opt.zero_grad()
             loss.backward()
             opt.step()
 
-            total_loss += loss.item() * len(predict)
-            total_samples += len(predict)
+            total_loss += loss.item() * len(ratings)
+            total_samples += len(ratings)
             process_bar(i+1, len(train_dataloader), prefix=' Training ')
 
         lr_sch.step()
