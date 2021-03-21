@@ -6,20 +6,20 @@ import torch
 class Config:
     device = torch.device("cuda:0")
     # device = torch.device("cpu")
-    train_epochs = 10
+    train_epochs = 15
     batch_size = 32
-    learning_rate = 0.0001
-    l2_regularization = 1e-6
+    learning_rate = 0.00001
+    l2_regularization = 1e-3
     learning_rate_decay = 0.99
 
     word2vec_file = 'embedding/glove.6B.50d.txt'
     data_dir = 'data/music'
 
     PAD_WORD = '<UNK>'
-    sent_count = 10  # number of sentence per user/item
-    ui_sent_count = 2  # number of sentence in a review that u to i
+    sent_count = 30  # number of sentence per user/item
+    lowest_sent_count = 10
+    ui_sent_count = 5  # number of sentence in a review that u to i
     sent_length = 20  # length of per sentence
-    lowest_sent_count = 2
     min_photo_count = 1
 
     gru_size = 64  # R-net. 64. It's u in paper

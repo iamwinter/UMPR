@@ -52,6 +52,8 @@ if __name__ == '__main__':
 
     log_path = f'./log/{date("%Y%m%d_%H%M%S")}.txt'
     model_path = f'./model/{date("%Y%m%d_%H%M%S")}.pt'
+    print(f'Start logging to {log_path}')
+    print(f'The trained model will be saved to {model_path}')
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     logger = get_logger(log_path)

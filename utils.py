@@ -67,7 +67,7 @@ def load_photos(photos_dir, resize=(64, 64), max_workers=8):
     def load_image(img_path):
         try:
             image = Image.open(img_path).convert('RGB').resize(resize)
-            image = numpy.asarray(image)
+            image = numpy.asarray(image) / 255
             return os.path.basename(img_path)[:-4], image.transpose((2, 0, 1))
         except Exception:
             # print(f'{date()}#### Damaged picture: {img_path}')
