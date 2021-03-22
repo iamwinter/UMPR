@@ -88,7 +88,7 @@ Performance comparison (mean squared error) on several datasets.
         <td>-</td>
         <td>-</td>
         <td>1.117017</td>
-        <td>-</td>
+        <td>0.925538</td>
     </tr>
     <tr>
         <td>Amazon Music (836,006)</td>

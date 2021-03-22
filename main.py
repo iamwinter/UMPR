@@ -45,7 +45,7 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
 
     end_time = time.perf_counter()
     second = int(end_time - start_time)
-    logger.info(f'End of training! Time used {second / 60}:{second % 60}.')
+    logger.info(f'End of training! Time used {second // 60}:{second % 60}.')
 
 
 if __name__ == '__main__':
