@@ -6,9 +6,9 @@ import torch
 class Config:
     device = torch.device("cuda:0")
     # device = torch.device("cpu")
-    train_epochs = 15
+    train_epochs = 20
     batch_size = 32
-    learning_rate = 0.00001
+    learning_rate = 0.00005
     l2_regularization = 1e-3
     learning_rate_decay = 0.99
 

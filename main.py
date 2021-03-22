@@ -31,7 +31,7 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
 
             total_loss += loss.item() * len(ratings)
             total_samples += len(ratings)
-            process_bar(i+1, len(train_dataloader), prefix=' Training ')
+            process_bar(i + 1, len(train_dataloader), prefix=' Training ')
 
         lr_sch.step()
         model.eval()
@@ -44,7 +44,8 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
             torch.save(model, model_path)
 
     end_time = time.perf_counter()
-    logger.info(f'End of training! Time used {end_time - start_time:.0f} seconds.')
+    second = int(end_time - start_time)
+    logger.info(f'End of training! Time used {second / 60}:{second % 60}.')
 
 
 if __name__ == '__main__':
@@ -52,26 +53,37 @@ if __name__ == '__main__':
 
     log_path = f'./log/{date("%Y%m%d_%H%M%S")}.txt'
     model_path = f'./model/{date("%Y%m%d_%H%M%S")}.pt'
-    print(f'Start logging to {log_path}')
-    print(f'The trained model will be saved to {model_path}')
+    photo_path = os.path.join(config.data_dir, 'photos')
+    photo_json = os.path.join(config.data_dir, 'photos.json')
+    train_path = os.path.join(config.data_dir, 'train.csv')
+    valid_path = os.path.join(config.data_dir, 'valid.csv')
+    test_path = os.path.join(config.data_dir, 'test.csv')
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
     logger = get_logger(log_path)
     logger.info(config)
+    logger.info(f'Logging to {log_path}')
+    logger.info(f'Save model {model_path}')
+    logger.info(f'Photo path {photo_path}')
+    logger.info(f'Photo json {photo_json}')
+    logger.info(f'Train file {train_path}')
+    logger.info(f'Valid file {valid_path}')
+    logger.info(f'Test  file {test_path}\n')
 
     logger.debug('Load word embedding...')
     word_emb, word_dict = load_embedding(config.word2vec_file)
 
     logger.debug('Load all of photos')
-    photos_dict = load_photos(os.path.join(config.data_dir, 'photos'))
+    photos_dict = load_photos(photo_path)
     logger.info(f'Loaded {len(photos_dict)} intact photos.')
 
     logger.debug('Loading train dataset.')
-    train_dataset = Dataset(os.path.join(config.data_dir, 'train.csv'), word_dict, config)
+    train_dataset = Dataset(train_path, photo_json, word_dict, config)
     logger.debug('Loading valid dataset.')
-    valid_dataset = Dataset(os.path.join(config.data_dir, 'valid.csv'), word_dict, config)
+    valid_dataset = Dataset(valid_path, photo_json, word_dict, config)
     logger.debug('Loading test dataset.')
-    test_dataset = Dataset(os.path.join(config.data_dir, 'test.csv'), word_dict, config)
+    test_dataset = Dataset(test_path, photo_json, word_dict, config)
 
     train_dlr = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True,
                            collate_fn=lambda x: batch_loader(x, config, photos_dict))

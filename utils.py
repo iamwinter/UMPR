@@ -125,7 +125,7 @@ def pad_list(arr, dim1, dim2, pad_elem=0):  # 二维list调整长宽，截长补
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, data_path, word_dict, config):
+    def __init__(self, data_path, photo_json, word_dict, config):
         self.word_dict = word_dict
         self.s_count = config.sent_count
         self.ui_s_count = config.ui_sent_count
@@ -140,7 +140,7 @@ class Dataset(torch.utils.data.Dataset):
         user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u for i).
         item_reviews = self._get_reviews(df, 'item_num', 'user_num')
         ui_reviews = self._get_rui(df['review'])
-        photos_id = self._load_photos_id(os.path.join(config.data_dir, 'photos.json'), df['itemID'])
+        photos_id = self._load_photos_id(photo_json, df['itemID'])
 
         self.user_reviews = user_reviews[self.retain_idx]
         self.item_reviews = item_reviews[self.retain_idx]

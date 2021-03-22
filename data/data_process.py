@@ -91,13 +91,16 @@ if __name__ == '__main__':
     parser.add_argument('--data_type', dest='data_type', default='amazon')
     parser.add_argument('--data_path', dest='data_path', default=os.path.join(sys.path[0], 'music/reviews_Digital_Music.json.gz'))
     parser.add_argument('--meta_path', dest='meta_path', default=os.path.join(sys.path[0], 'music/meta_Digital_Music.json.gz'))
-    parser.add_argument('--save_dir', dest='save_dir', default=os.path.join(sys.path[0], 'music'))
+    parser.add_argument('--save_dir', dest='save_dir', default=None)
     parser.add_argument('--train_rate', dest='train_rate', default=0.8)
     args = parser.parse_args()
 
     col_name = ['reviewerID', 'asin', 'reviewText', 'overall']  # default amazon
     if args.data_type == 'yelp':
         col_name = ['user_id', 'business_id', 'text', 'stars']
+
+    if args.save_dir is None:
+        args.save_dir = os.path.dirname(args.data_path) if '/' in args.data_path else './'
     os.makedirs(args.save_dir, exist_ok=True)
 
     start_time = time.perf_counter()
