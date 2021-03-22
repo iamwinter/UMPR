@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import logging
-from collections import defaultdict
 from concurrent.futures import as_completed
 from concurrent.futures.thread import ThreadPoolExecutor
 
@@ -37,7 +36,7 @@ def date(f='%Y-%m-%d %H:%M:%S'):
 
 def process_bar(current, total, prefix='', auto_rm=True):
     bar = '=' * int(current / total * 50)
-    bar = f'{prefix}|{bar.ljust(50)}| ({current}/{total}) {current / total:.1%} | '
+    bar = f' {prefix} |{bar.ljust(50)}| ({current}/{total}) {current / total:.1%} | '
     print(bar, end='\r', flush=True)
     if auto_rm and current == total:
         print(end=('\r' + ' ' * len(bar) + '\r'), flush=True)
@@ -70,11 +69,9 @@ def load_photos(photos_dir, resize=(64, 64), max_workers=8):
             image = numpy.asarray(image) / 255
             return os.path.basename(img_path)[:-4], image.transpose((2, 0, 1))
         except Exception:
-            # print(f'{date()}#### Damaged picture: {img_path}')
-            return img_path, None
+            return img_path, None  # Damaged picture: {img_path}
 
-    # print(f'{date()}#### Start using multithreading to read {len(paths)} pictures!')
-    pool = ThreadPoolExecutor(max_workers=max_workers)
+    pool = ThreadPoolExecutor(max_workers=max_workers)  # to read {len(paths)} pictures
     tasks = [pool.submit(load_image, path) for path in paths]
 
     photos_dict = dict()
@@ -85,7 +82,7 @@ def load_photos(photos_dir, resize=(64, 64), max_workers=8):
             photos_dict[name] = photo
         else:
             damaged.append(name)
-        process_bar(i + 1, len(tasks), prefix=' Load photos ')
+        process_bar(i + 1, len(tasks), prefix='Loading photos')
 
     for name in damaged:
         print(f'## Failed to open {name}.jpg')
@@ -101,7 +98,7 @@ def predict_mse(model, dataloader):
             predict, loss = model(user_reviews, item_reviews, reviews, photos, ratings)
             mse += F.mse_loss(predict, ratings, reduction='sum').item()
             sample_count += len(ratings)
-            process_bar(i + 1, len(dataloader), prefix=' Evaluate ')
+            process_bar(i + 1, len(dataloader), prefix='Evaluate')
     return mse / sample_count
 
 
@@ -140,7 +137,7 @@ class Dataset(torch.utils.data.Dataset):
         user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u for i).
         item_reviews = self._get_reviews(df, 'item_num', 'user_num')
         ui_reviews = self._get_rui(df['review'])
-        photos_id = self._load_photos_id(photo_json, df['itemID'])
+        photos_id = self._load_photos_id(photo_json, df['itemID'], config.view_size)
 
         self.user_reviews = user_reviews[self.retain_idx]
         self.item_reviews = item_reviews[self.retain_idx]
@@ -174,7 +171,7 @@ class Dataset(torch.utils.data.Dataset):
         for i, task in enumerate(as_completed(tasks)):
             idx, sents = task.result()
             ret_sentences[idx] = sents
-            process_bar(i + 1, len(tasks), prefix='Loading sentences ')
+            process_bar(i + 1, len(tasks), prefix=f'Loading sentences of {lead}')
         return numpy.asarray(ret_sentences, dtype=object)
 
     def _get_rui(self, reviews):
@@ -196,39 +193,49 @@ class Dataset(torch.utils.data.Dataset):
                 wids.append(self.PAD_WORD_idx)
         return wids
 
-    def _load_photos_id(self, photos_json, item_id_list):
-        photo_df = pd.read_json(photos_json, orient='records', lines=True)[['business_id', 'photo_id']]
-        item_photos_id = defaultdict(list)
-        for b, p in zip(photo_df['business_id'], photo_df['photo_id']):
-            item_photos_id[b].append(p)
+    def _load_photos_id(self, photos_json, item_id_list, view_size):
+        photo_df = pd.read_json(photos_json, orient='records', lines=True)
+        if 'label' not in photo_df.columns:
+            photo_df['label'] = 'None'  # Due to amazon have no label.
+        label_index = dict([(label, i) for i, label in enumerate(photo_df['label'].drop_duplicates())])  # label: index
+        if len(label_index) != view_size:
+            print(f'Number of labels in photos.json is {len(label_index)}! Set Config().view_size={len(label_index)}!')
+            exit(1)
+
+        user_photos = dict(list(photo_df[['photo_id', 'label']].groupby(photo_df['business_id'])))  # iid: df
 
         photos_id = []
         for idx, iid in enumerate(item_id_list):
-            item_photos = []
-            for pid in item_photos_id[iid]:
-                item_photos.append(pid)
-            if len(item_photos) < 1:  # Too few photos
-                self.retain_idx[idx] = False
+            item_df = user_photos.get(iid, pd.DataFrame(columns=['photo_id', 'label']))  # all photos of this item.
+
+            item_photos = [[]] * len(label_index)  # shape(label_size, photos count)
+            for label, pids in dict(list(item_df['photo_id'].groupby(item_df['label']))).items():
+                item_photos[label_index[label]] = pids.to_list()
+                if len(pids) < 1:  # Too few photos of this view.
+                    self.retain_idx[idx] = False
+
             photos_id.append(item_photos)
-        return numpy.asarray(photos_id, dtype=object)
+        return numpy.asarray(photos_id, dtype=object)  # shape(samples, label_size, photo_count)
 
 
 def batch_loader(batch_list, config, photos_dict):
     photo_size = list(photos_dict.values())[0].shape
     u_sents, i_sents, ui_sents, photos, ratings = [], [], [], [], []
-    for u_s, i_s, ui_s, p_ids, rating in batch_list:
+    for u_s, i_s, ui_s, photos_ids, rating in batch_list:
         u_sents.append(pad_list(u_s, config.sent_count, config.sent_length))
         i_sents.append(pad_list(i_s, config.sent_count, config.sent_length))
         ui_sents.append(pad_list(ui_s, config.ui_sent_count, config.sent_length))
-        cur_photos = []
-        for pid in p_ids:
-            if pid in photos_dict:  # It's possible that corresponding photo failed to download.
-                cur_photos.append(photos_dict[pid])
-            if len(cur_photos) >= config.min_photo_count:
-                break
-        while len(cur_photos) < config.min_photo_count:
-            cur_photos.append(numpy.zeros(photo_size))
-        photos.append(cur_photos)
+
+        cur_photos = []  # photos of current item
+        for pids_of_label in photos_ids:  # There are several photos of current item.
+            label_photos = [photos_dict[pid] for pid in pids_of_label if pid in photos_dict]  # convert ids to photos
+            if len(cur_photos) >= config.photo_count:
+                label_photos = label_photos[:config.photo_count]  # for each view(label)
+            while len(label_photos) < config.photo_count:
+                label_photos.append(numpy.zeros(photo_size))  # shape(label_count, photo_count)
+            cur_photos.append(label_photos)
+
+        photos.append(cur_photos)  # shape(batch_size, view_size, photo_count, C,H,W)
         ratings.append(rating)
     return torch.LongTensor(u_sents), torch.LongTensor(i_sents), torch.LongTensor(ui_sents), \
            torch.Tensor(photos), torch.Tensor(ratings)

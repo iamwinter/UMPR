@@ -31,7 +31,7 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
 
             total_loss += loss.item() * len(ratings)
             total_samples += len(ratings)
-            process_bar(i + 1, len(train_dataloader), prefix=' Training ')
+            process_bar(i + 1, len(train_dataloader), prefix=f'Training epoch {epoch}')
 
         lr_sch.step()
         model.eval()

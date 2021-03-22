@@ -6,7 +6,7 @@ from torch import nn
 class RNet(nn.Module):
 
     def __init__(self, gru_in, gru_out):
-        super(RNet, self).__init__()
+        super().__init__()
         self.gru = nn.GRU(input_size=gru_in, hidden_size=gru_out, batch_first=True, bidirectional=True)
         self.M = nn.Parameter(torch.randn(2 * gru_out, 2 * gru_out))
 
@@ -26,14 +26,14 @@ class RNet(nn.Module):
 class SNet(nn.Module):
 
     def __init__(self, self_atte_size, repr_size):
-        super(SNet, self).__init__()
+        super().__init__()
         self.Ms = nn.Parameter(torch.randn(self_atte_size, repr_size))  # repr_size = 2u in the paper
         self.Ws = nn.Parameter(torch.randn(1, self_atte_size))
 
     def forward(self, gru_repr, word_soft, sent_length):
         # self-attention for sentence-level sentiment.
         batch_size = gru_repr.shape[0]
-        sent_count = gru_repr.shape[1]//sent_length
+        sent_count = gru_repr.shape[1] // sent_length
         gru_repr = gru_repr.reshape(batch_size * sent_count, sent_length, -1).transpose(-1, -2)
         sent_soft = torch.softmax(self.Ws @ torch.tanh(self.Ms @ gru_repr), dim=-1)  # (temp_batch,1,r_length)
         self_atte = gru_repr @ sent_soft.transpose(-1, -2)  # out(temp_batch, repr_size, 1)
@@ -46,7 +46,7 @@ class SNet(nn.Module):
 class CNet(nn.Module):
 
     def __init__(self, gru_in, gru_out, k_count, k_size, view_size, threshold=0.35):
-        super(CNet, self).__init__()
+        super().__init__()
         self.threshold = threshold
 
         self.gru = nn.GRU(input_size=gru_in, hidden_size=gru_out, batch_first=True, bidirectional=True)  # BiGRU
@@ -74,17 +74,16 @@ class CNet(nn.Module):
         cnn_out = cnn_out.max(dim=-1)[0]  # (batch_size*sent_count, k_count)
         cnn_out = cnn_out.view(batch_size, sent_count, -1)
 
-        linear_out = self.linear(cnn_out)
-        # linear_out[linear_out < self.threshold] = 0  # 该句导致无法backward，只能用torch.where，原因不明
-        linear_out = torch.where(linear_out < self.threshold, torch.zeros_like(linear_out), linear_out)
-        final_repr = torch.sum(linear_out ** 2, dim=-2)  # out(batch_size, view_size)
-        return gru_repr, linear_out, final_repr
+        view_p = self.linear(cnn_out)  # (14) view possibility (batch_size, sent_count, view_size)
+        view_p = torch.where(view_p < self.threshold, torch.zeros_like(view_p), view_p)  # (15)
+        final_repr = torch.sum(view_p ** 2, dim=-2)  # (16) out(batch_size, view_size)
+        return gru_repr, view_p, final_repr
 
 
 class ReviewNet(nn.Module):
 
     def __init__(self, emb_size, gru_size, atte_size):
-        super(ReviewNet, self).__init__()
+        super().__init__()
         self.r_net = RNet(emb_size, gru_size)  # Note: using Bi-GRU
         self.s_net_u = SNet(atte_size, gru_size * 2)
         self.s_net_i = SNet(atte_size, gru_size * 2)
@@ -109,7 +108,7 @@ class ReviewNet(nn.Module):
 
 class ControlNet(nn.Module):
     def __init__(self, emb_size, gru_size, k_count, k_size, view_size, threshold, atte_size):
-        super(ControlNet, self).__init__()
+        super().__init__()
         self.c_net = CNet(emb_size, gru_size, k_count, k_size, view_size, threshold)
         self.s_net = SNet(atte_size, repr_size=gru_size * 2)
         self.ss_net = nn.Sequential(
@@ -120,12 +119,13 @@ class ControlNet(nn.Module):
     def forward(self, user_emb, item_emb, ui_emb):
         ui_s_length = ui_emb.shape[-2]
 
-        gru_repr, view_possibility, c_net_out = self.c_net(ui_emb)
+        gru_repr, view_p, c_net_out = self.c_net(ui_emb)
         _, _, c_u = self.c_net(user_emb)
         _, _, c_i = self.c_net(item_emb)
-        s, _ = self.s_net(gru_repr, view_possibility, ui_s_length)
-        senti_score = self.ss_net(s)  # out(batch_size, s_count, 1)
-        view_score = (senti_score * (view_possibility ** 2)).sum(dim=-2) / (view_possibility ** 2).sum(dim=-2)  # (17)
+        s, _ = self.s_net(gru_repr, view_p, ui_s_length)
+        senti_score = self.ss_net(s)  # (17) sentiment score of each vocab. out(batch_size, s_count, 1)
+        senti_score = senti_score.expand(-1, -1, view_p.shape[-1])  # copy P of each word to every view
+        view_score = torch.sum(senti_score * view_p ** 2, dim=-2).div(torch.sum(view_p ** 2, dim=-2) + 1e-4)  # (18)
         q_p = torch.zeros_like(view_score)
         q_pos = 4 * (view_score - 0.5) ** 2
         q_neg = 4 * (0.5 - view_score) ** 2
@@ -139,44 +139,46 @@ class ControlNet(nn.Module):
 
 
 class VisualNet(nn.Module):
-    def __init__(self, view_size):
+    def __init__(self, view_size, vgg_out):
         super().__init__()
-        self.vgg16 = torchvision.models.vgg16(pretrained=True)
-        vgg_out = 1000  # 1000 is the value that vgg16 output.
-        self.pos_v_emb = nn.Parameter(torch.randn(vgg_out))
-        self.neg_v_emb = nn.Parameter(torch.randn(vgg_out))
-        # The out_size ought be 1. But real view_size of photos is only 1. So let out_size be view_size to increase it.
-        # self.linear = nn.Linear(vgg_out, 1)  # According to original paper.
-        self.linear = nn.Linear(vgg_out, view_size)
+        self.vgg16 = nn.Sequential(
+            torchvision.models.vgg16(pretrained=True, num_classes=vgg_out),
+            nn.Sigmoid()
+        )
+        self.pos_v_emb = nn.Parameter(torch.randn(view_size, vgg_out))
+        self.neg_v_emb = nn.Parameter(torch.randn(view_size, vgg_out))
+        self.linear = nn.Linear(vgg_out, 1)
 
     def forward(self, images, c_u, c_i):
         batch_size = images.shape[0]
-        photo_count = images.shape[1]
-        images = images.view(torch.Size([images.shape[0] * images.shape[1]]) + images.shape[2:])  # (-1,C,H,W)
-        img_repr = self.vgg16(images)  # (-1,1000).
-        img_repr = img_repr.view(batch_size, photo_count, -1)  # (b,pc,1000). Original paper:(b,view_size,pc,1000)
-        # According to paper, calculate average for pictures of each view.
-        img_repr = img_repr.mean(dim=-2)  # eq.(10) (b,1000). Original paper:(b,view_size,1000)
+        view_size = images.shape[1]
+        photo_count = images.shape[2]
+        images = images.view(batch_size * view_size * photo_count, images.shape[3], images.shape[4], images.shape[5])
+        img_repr = self.vgg16(images)
+        img_repr = img_repr.view(batch_size, view_size, photo_count, -1)
+        img_repr = img_repr.mean(dim=-2)  # eq.(10) (b, view_size, vgg_out)
 
-        pos_match = torch.tanh(torch.abs(self.linear(self.pos_v_emb) - self.linear(img_repr)))  # eq.(11) \tilde{x^V+}
-        neg_match = torch.tanh(torch.abs(self.linear(self.neg_v_emb) - self.linear(img_repr)))  # (b,view_size)
+        img_emb = self.linear(img_repr).squeeze(-1)
+        pos_emb = self.linear(self.pos_v_emb).squeeze(-1)
+        neg_emb = self.linear(self.neg_v_emb).squeeze(-1)
+        pos_match = torch.tanh(torch.abs(pos_emb - img_emb))  # eq.(11) \tilde{x^V+}
+        neg_match = torch.tanh(torch.abs(neg_emb - img_emb))  # (b,view_size)
 
         final_pos = c_u * c_i * (1 - pos_match)
         final_neg = c_u * c_i * (1 - neg_match)
-
         return pos_match, neg_match, final_pos, final_neg
 
 
 class UMPR(nn.Module):
     def __init__(self, config, word_emb):
-        super(UMPR, self).__init__()
+        super().__init__()
         self.loss_v_rate = config.loss_v_rate
         self.embedding = nn.Embedding.from_pretrained(torch.Tensor(word_emb))
 
         self.review_net = ReviewNet(self.embedding.embedding_dim, config.gru_size, config.self_atte_size)
         self.control_net = ControlNet(self.embedding.embedding_dim, config.gru_size, config.kernel_count,
                                       config.kernel_size, config.view_size, config.threshold, config.self_atte_size)
-        self.visual_net = VisualNet(config.view_size)
+        self.visual_net = VisualNet(config.view_size, config.vgg_out)
 
         self.linear_fusion = nn.Sequential(
             nn.Linear(config.gru_size * 2 + config.view_size + config.view_size, 1),

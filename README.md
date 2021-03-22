@@ -118,3 +118,12 @@ Performance comparison (mean squared error) on several datasets.
 **UMPR-R**: only review network part of UMPR.
 
 **UMPR**: Our complete model.
+
+
+# 实验笔记
+
++ 2021.03.22
+
+  - 发现`torchvision.models.models.vgg16`最后一层是`Linear`，输出值很大（~1e6）。
+    解决：自行添加激活函数`sigmoid`。
+  - 公式18涉及除法，有可能造成除以0的情况。解决：分母额外加1e-6。
