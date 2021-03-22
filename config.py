@@ -28,7 +28,7 @@ class Config:
     kernel_count = 120  # For CNN of C-net. 120
     kernel_size = 3  # For CNN of C-net. 原文说该值=1 2 3分别对应40个filters，共120个filters
     threshold = 0.35  # threshold of C-net
-    vgg_out = 100  # It's high-level representation of each image which named u_c in formulate (9)
+    vgg_out = 1000  # It's high-level representation of each image which named u_c in formulate (9)
     loss_v_rate = 0.1  # rate of loss_v
 
     def __init__(self):
