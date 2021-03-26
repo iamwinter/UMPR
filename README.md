@@ -62,6 +62,10 @@ python data/down_photos.py --photos_json ./data/music/photos.json
 ```shell script
 python main.py --device cuda:0 --data_dir ./data/music
 ```
++ Test only:
+```shell script
+python test.py --device cuda:0 --data_dir ./data/music --model_path ./model/default.pt
+```
 
 # Experiment
 
@@ -120,10 +124,18 @@ Performance comparison (mean squared error) on several datasets.
 **UMPR**: Our complete model.
 
 
-# 实验笔记
+# Experiment Notebook
 
 + 2021.03.22
 
   - 发现`torchvision.models.models.vgg16`最后一层是`Linear`，输出值很大（~1e6）。
-    解决：自行添加激活函数`sigmoid`。
   - 公式18涉及除法，有可能造成除以0的情况。解决：分母额外加1e-6。
+
++ 2021.03.24
+
+  - 数据集处理技巧：评论的句子按长度排序，长句优先用于训练，短句则大概率在被对齐句数时丢弃。
+  - GRU改为不定长输入。原方法是输入等长序列。
+
++ 2021.03.26
+
+  - 对于图片集，一次性读入因内存不足而退出。解决：每个batch训练/测试前即时从磁盘中读取图片。

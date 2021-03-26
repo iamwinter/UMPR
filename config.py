@@ -8,17 +8,19 @@ class Config:
     # device = torch.device("cpu")
     train_epochs = 20
     batch_size = 32
-    learning_rate = 0.00001
+    learning_rate = 1e-6
     l2_regularization = 1e-3
     learning_rate_decay = 0.99
 
     word2vec_file = 'embedding/glove.6B.50d.txt'
     data_dir = 'data/music'
+    log_path = 'log/default.txt'
+    model_path = 'model/default.pt'
 
     PAD_WORD = '<UNK>'
-    sent_count = 30  # number of sentence per user/item
+    sent_count = 20  # number of sentence per user/item
     lowest_sent_count = 5
-    ui_sent_count = 5  # number of sentence in a review that u to i
+    ui_sent_count = 4  # number of sentence in a review that u to i
     sent_length = 20  # length per sentence
     view_size = 1  # view size of C-net and Visual-Net. 1 for amazon and 4 for yelp!
     photo_count = 1  # number of photos for each view
@@ -28,7 +30,6 @@ class Config:
     kernel_count = 120  # For CNN of C-net. 120
     kernel_size = 3  # For CNN of C-net. 原文说该值=1 2 3分别对应40个filters，共120个filters
     threshold = 0.35  # threshold of C-net
-    vgg_out = 1000  # It's high-level representation of each image which named u_c in formulate (9)
     loss_v_rate = 0.1  # rate of loss_v
 
     def __init__(self):

@@ -3,18 +3,42 @@ import torchvision
 from torch import nn
 
 
+class ImprovedRnn(nn.Module):
+    def __init__(self, module, *args, **kwargs):
+        assert module in (nn.RNN, nn.LSTM, nn.GRU)
+        super().__init__()
+        self.module = module(*args, **kwargs)
+
+    def forward(self, input, lengths):  # input shape(batch_size, seq_len, input_size)
+        idx = torch.argsort(lengths, descending=True)
+        package = nn.utils.rnn.pack_padded_sequence(input[idx], lengths[idx].cpu(), batch_first=self.module.batch_first)
+        result, hidden = self.module(package)
+        result, lens = nn.utils.rnn.pad_packed_sequence(result, batch_first=self.module.batch_first)
+        output = torch.zeros_like(result)
+        output[idx] = result
+        return output, hidden
+
+
 class RNet(nn.Module):
 
     def __init__(self, gru_in, gru_out):
         super().__init__()
-        self.gru = nn.GRU(input_size=gru_in, hidden_size=gru_out, batch_first=True, bidirectional=True)
+        self.gru = ImprovedRnn(nn.GRU, input_size=gru_in, hidden_size=gru_out, batch_first=True, bidirectional=True)
         self.M = nn.Parameter(torch.randn(2 * gru_out, 2 * gru_out))
 
-    def forward(self, user_emb, item_emb):
-        user_emb = user_emb.view(user_emb.shape[0], user_emb.shape[1] * user_emb.shape[2], user_emb.shape[3])
-        item_emb = item_emb.view(item_emb.shape[0], item_emb.shape[1] * item_emb.shape[2], item_emb.shape[3])
-        gru_u, hn = self.gru(user_emb)
-        gru_i, hn = self.gru(item_emb)  # out(batch_size, sent_count * sent_length, 2*gru_out)
+    def forward(self, user_emb, item_emb, u_lengths, i_lengths):
+        batch_size = user_emb.shape[0]
+        sent_count = user_emb.shape[1]
+        sent_length = user_emb.shape[2]
+        user_emb = user_emb.view(user_emb.shape[0] * user_emb.shape[1], user_emb.shape[2], user_emb.shape[3])
+        item_emb = item_emb.view(item_emb.shape[0] * item_emb.shape[1], item_emb.shape[2], item_emb.shape[3])
+        u_lengths = u_lengths.view(u_lengths.shape[0] * u_lengths.shape[1])
+        i_lengths = i_lengths.view(i_lengths.shape[0] * i_lengths.shape[1])
+        gru_u, hn = self.gru(user_emb, u_lengths)
+        gru_i, hn = self.gru(item_emb, i_lengths)  # out(batch_size*sent_count, sent_length, 2*gru_out)
+        gru_u = gru_u.reshape(batch_size, sent_count * sent_length, -1)
+        gru_i = gru_i.reshape(batch_size, sent_count * sent_length, -1)
+
         A = gru_i @ self.M @ gru_u.transpose(-1, -2)
         soft_u = torch.softmax(torch.max(A, dim=-2).values, dim=-1)  # column
         soft_i = torch.softmax(torch.max(A, dim=-1).values, dim=-1)  # row. out(batch, sent_count * sent_length)
@@ -49,7 +73,7 @@ class CNet(nn.Module):
         super().__init__()
         self.threshold = threshold
 
-        self.gru = nn.GRU(input_size=gru_in, hidden_size=gru_out, batch_first=True, bidirectional=True)  # BiGRU
+        self.gru = ImprovedRnn(nn.GRU, input_size=gru_in, hidden_size=gru_out, batch_first=True, bidirectional=True)
         self.cnn = nn.Sequential(
             # permute(0,2,1) -> (temp_bs, 2*gru_out, s_length)
             nn.Conv1d(in_channels=2 * gru_out, out_channels=k_count, kernel_size=k_size, padding=(k_size - 1) // 2),
@@ -64,11 +88,14 @@ class CNet(nn.Module):
             # out(batch_size, sent_count, view_size)
         )
 
-    def forward(self, review_emb):
+    def forward(self, review_emb, lengths):
         batch_size = review_emb.shape[0]
         sent_count = review_emb.shape[1]
         sent_length = review_emb.shape[2]
-        gru_repr, hn = self.gru(review_emb.view(batch_size, sent_count * sent_length, -1))
+        lengths = lengths.view(lengths.shape[0] * lengths.shape[1])
+        gru_repr, hn = self.gru(review_emb.view(batch_size * sent_count, sent_length, -1), lengths)
+        gru_repr = gru_repr.reshape(batch_size, sent_count * sent_length, -1)
+
         cnn_in = gru_repr.reshape(batch_size * sent_count, sent_length, -1).transpose(-1, -2)
         cnn_out = self.cnn(cnn_in)
         cnn_out = cnn_out.max(dim=-1)[0]  # (batch_size*sent_count, k_count)
@@ -91,11 +118,11 @@ class ReviewNet(nn.Module):
         self.linear_u = nn.Linear(gru_size * 4, gru_size * 2, bias=False)
         self.linear_i = nn.Linear(gru_size * 4, gru_size * 2, bias=False)
 
-    def forward(self, user_emb, item_emb):
+    def forward(self, user_emb, item_emb, u_lengths, i_lengths):
         u_s_length = user_emb.shape[-2]
         i_s_length = item_emb.shape[-2]
 
-        gru_u, gru_i, soft_u, soft_i, atte_u, atte_i = self.r_net(user_emb, item_emb)
+        gru_u, gru_i, soft_u, soft_i, atte_u, atte_i = self.r_net(user_emb, item_emb, u_lengths, i_lengths)
         _, sentiment_u = self.s_net_u(gru_u, soft_u, u_s_length)
         _, sentiment_i = self.s_net_i(gru_i, soft_i, i_s_length)
 
@@ -116,12 +143,12 @@ class ControlNet(nn.Module):
             nn.Sigmoid()
         )
 
-    def forward(self, user_emb, item_emb, ui_emb):
+    def forward(self, user_emb, item_emb, ui_emb, u_lengths, i_lengths, ui_lengths):
         ui_s_length = ui_emb.shape[-2]
 
-        gru_repr, view_p, c_net_out = self.c_net(ui_emb)
-        _, _, c_u = self.c_net(user_emb)
-        _, _, c_i = self.c_net(item_emb)
+        gru_repr, view_p, c_net_out = self.c_net(ui_emb, ui_lengths)
+        _, _, c_u = self.c_net(user_emb, u_lengths)
+        _, _, c_i = self.c_net(item_emb, i_lengths)
         s, _ = self.s_net(gru_repr, view_p, ui_s_length)
         senti_score = self.ss_net(s)  # (17) sentiment score of each vocab. out(batch_size, s_count, 1)
         senti_score = senti_score.expand(-1, -1, view_p.shape[-1])  # copy P of each word to every view
@@ -139,11 +166,11 @@ class ControlNet(nn.Module):
 
 
 class VisualNet(nn.Module):
-    def __init__(self, view_size, vgg_out):
+    def __init__(self, view_size, vgg_out=1000):
         super().__init__()
         self.vgg16 = nn.Sequential(
             torchvision.models.vgg16(pretrained=True, num_classes=vgg_out),
-            nn.Sigmoid()
+            # nn.Sigmoid()
         )
         self.pos_v_emb = nn.Parameter(torch.randn(view_size, vgg_out))
         self.neg_v_emb = nn.Parameter(torch.randn(view_size, vgg_out))
@@ -178,20 +205,21 @@ class UMPR(nn.Module):
         self.review_net = ReviewNet(self.embedding.embedding_dim, config.gru_size, config.self_atte_size)
         self.control_net = ControlNet(self.embedding.embedding_dim, config.gru_size, config.kernel_count,
                                       config.kernel_size, config.view_size, config.threshold, config.self_atte_size)
-        self.visual_net = VisualNet(config.view_size, config.vgg_out)
+        self.visual_net = VisualNet(config.view_size)
 
         self.linear_fusion = nn.Sequential(
             nn.Linear(config.gru_size * 2 + config.view_size + config.view_size, 1),
             nn.ReLU()
         )
 
-    def forward(self, user_reviews, item_reviews, ui_reviews, photos, labels):
+    def forward(self, user_reviews, item_reviews, ui_reviews, u_lengths, i_lengths, ui_lengths, photos, labels):
         user_emb = self.embedding(user_reviews)  # (batch_size, sent_count, sent_length, emb_size)
         item_emb = self.embedding(item_reviews)
         ui_emb = self.embedding(ui_reviews)
 
-        review_net_repr = self.review_net(user_emb, item_emb)  # (batch, 2u) where u is GRU hidden size
-        c_u, c_i, prefer_pos, prefer_neg = self.control_net(user_emb, item_emb, ui_emb)
+        review_net_repr = self.review_net(user_emb, item_emb, u_lengths, i_lengths)  # (batch, 2u) where u is GRU hidden
+        c_u, c_i, prefer_pos, prefer_neg = self.control_net(user_emb, item_emb, ui_emb, u_lengths, i_lengths,
+                                                            ui_lengths)
         pos_match, neg_match, final_pos, final_neg = self.visual_net(photos, c_u, c_i)  # (b,view_size)
 
         prediction = self.linear_fusion(torch.cat([review_net_repr, final_pos, final_neg], dim=-1)).squeeze(-1)
