@@ -58,7 +58,7 @@ python data/data_process.py --data_type amazon \
 python data/down_photos.py --photos_json ./data/music/photos.json
 ```
 
-+ Train and evaluate the model. if use yelp dataset, you must set view_size=4.
++ Train and evaluate the model. if use yelp dataset, you must set view_size=5.
 ```shell script
 python main.py --data_dir ./data/music --view_size 1
 ```
