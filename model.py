@@ -10,6 +10,9 @@ class ImprovedRnn(nn.Module):
         self.module = module(*args, **kwargs)
 
     def forward(self, input, lengths):  # input shape(batch_size, seq_len, input_size)
+        if not hasattr(self, '_flattened'):
+            self.module.flatten_parameters()
+            setattr(self, '_flattened', True)
         idx = torch.argsort(lengths, descending=True)
         package = nn.utils.rnn.pack_padded_sequence(input[idx], lengths[idx].cpu(), batch_first=self.module.batch_first)
         result, hidden = self.module(package)
@@ -21,10 +24,15 @@ class ImprovedRnn(nn.Module):
 
 class RNet(nn.Module):
 
-    def __init__(self, gru_in, gru_out):
+    def __init__(self, gru_in, gru_out, pretrained: str = None):
         super().__init__()
         self.gru = ImprovedRnn(nn.GRU, input_size=gru_in, hidden_size=gru_out, batch_first=True, bidirectional=True)
         self.M = nn.Parameter(torch.randn(2 * gru_out, 2 * gru_out))
+        if pretrained is not None:
+            try:
+                self.load_state_dict(torch.load(pretrained).state_dict())
+            except:
+                print(f'Failed to load R-Net pre-trained weights from "{pretrained}"')
 
     def forward(self, user_emb, item_emb, u_lengths, i_lengths):
         batch_size = user_emb.shape[0]
@@ -39,7 +47,7 @@ class RNet(nn.Module):
         gru_u = gru_u.reshape(batch_size, sent_count * sent_length, -1)
         gru_i = gru_i.reshape(batch_size, sent_count * sent_length, -1)
 
-        A = gru_i @ self.M @ gru_u.transpose(-1, -2)
+        A = gru_i @ self.M @ gru_u.transpose(-1, -2)  # (3) affinity matrix
         soft_u = torch.softmax(torch.max(A, dim=-2).values, dim=-1)  # column
         soft_i = torch.softmax(torch.max(A, dim=-1).values, dim=-1)  # row. out(batch, sent_count * sent_length)
         atte_u = gru_u.transpose(-1, -2) @ soft_u.unsqueeze(-1)
@@ -49,10 +57,15 @@ class RNet(nn.Module):
 
 class SNet(nn.Module):
 
-    def __init__(self, self_atte_size, repr_size):
+    def __init__(self, self_atte_size, repr_size, pretrained: str = None):
         super().__init__()
         self.Ms = nn.Parameter(torch.randn(self_atte_size, repr_size))  # repr_size = 2u in the paper
         self.Ws = nn.Parameter(torch.randn(1, self_atte_size))
+        if pretrained is not None:
+            try:
+                self.load_state_dict(torch.load(pretrained).state_dict())
+            except:
+                print(f'Failed to load S-Net pre-trained weights from "{pretrained}"')
 
     def forward(self, gru_repr, word_soft, sent_length):
         # self-attention for sentence-level sentiment.
@@ -69,7 +82,7 @@ class SNet(nn.Module):
 
 class CNet(nn.Module):
 
-    def __init__(self, gru_in, gru_out, k_count, k_size, view_size, threshold=0.35):
+    def __init__(self, gru_in, gru_out, k_count, k_size, view_size, threshold=0.35, pretrained: str = None):
         super().__init__()
         self.threshold = threshold
 
@@ -87,6 +100,11 @@ class CNet(nn.Module):
             nn.Sigmoid()
             # out(batch_size, sent_count, view_size)
         )
+        if pretrained is not None:
+            try:
+                self.load_state_dict(torch.load(pretrained).state_dict())
+            except:
+                print(f'Failed to load S-Net pre-trained weights from "{pretrained}"')
 
     def forward(self, review_emb, lengths):
         batch_size = review_emb.shape[0]
@@ -105,6 +123,23 @@ class CNet(nn.Module):
         view_p = torch.where(view_p < self.threshold, torch.zeros_like(view_p), view_p)  # (15)
         final_repr = torch.sum(view_p ** 2, dim=-2)  # (16) out(batch_size, view_size)
         return gru_repr, view_p, final_repr
+
+
+class SSNet(nn.Module):
+    def __init__(self, input_size, pretrained: str = None):
+        super(SSNet, self).__init__()
+        self.linear = nn.Sequential(
+            nn.Linear(input_size, 1),
+            nn.Sigmoid()
+        )
+        if pretrained is not None:
+            try:
+                self.load_state_dict(torch.load(pretrained).state_dict())
+            except:
+                print(f'Failed to load SS-Net pre-trained weights from "{pretrained}"')
+
+    def forward(self, sentiment_emb):  # in(batch_size, s_count, input_size)
+        return self.linear(sentiment_emb)
 
 
 class ReviewNet(nn.Module):
@@ -138,10 +173,7 @@ class ControlNet(nn.Module):
         super().__init__()
         self.c_net = CNet(emb_size, gru_size, k_count, k_size, view_size, threshold)
         self.s_net = SNet(atte_size, repr_size=gru_size * 2)
-        self.ss_net = nn.Sequential(
-            nn.Linear(gru_size * 2, 1),
-            nn.Sigmoid()
-        )
+        self.ss_net = SSNet(input_size=gru_size * 2)
 
     def forward(self, user_emb, item_emb, ui_emb, u_lengths, i_lengths, ui_lengths):
         ui_s_length = ui_emb.shape[-2]

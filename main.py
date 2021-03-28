@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from config import Config
-from utils import Dataset, date, predict_mse, load_embedding, batch_loader, process_bar, get_logger, load_photos
+from utils import Dataset, date, predict_mse, load_embedding, batch_loader, process_bar, get_logger
 from model import UMPR
 
 
@@ -26,6 +26,7 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
             user_reviews, item_reviews, reviews, u_lengths, i_lengths, ui_lengths, photos, ratings = cur_batch
             model.train()
             pred, loss = model(user_reviews, item_reviews, reviews, u_lengths, i_lengths, ui_lengths, photos, ratings)
+            loss = loss.mean()
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -39,15 +40,18 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
                 print('Evaluate model to update best model...', end='\r')
                 valid_mse = predict_mse(model, valid_dataloader)
                 if best_loss > valid_mse:
-                    torch.save(model, model_path)
+                    if type(model) is torch.nn.parallel.DataParallel:
+                        torch.save(model.module, model_path)
+                    else:
+                        torch.save(model, model_path)
                     best_loss = valid_mse
-            if batch_counter == 50000:
-                return
 
         lr_sch.step()
         valid_mse = predict_mse(model, valid_dataloader)
         train_loss = total_loss / total_samples
-        logger.info(f"## Epoch {epoch:3d}; train mse {train_loss:.6f}; validation mse {valid_mse:.6f}")
+        logger.info(f"Epoch {epoch:3d}; train loss {train_loss:.6f}; validation mse {valid_mse:.6f}({best_loss:.6f})")
+        if batch_counter == 50000:
+            break
 
     end_time = time.perf_counter()
     second = int(end_time - start_time)
@@ -92,13 +96,18 @@ if __name__ == '__main__':
         test_data = Dataset(test_path, photo_json, word_dict, config)
         pickle.dump([train_data, valid_data, test_data], open(config.data_dir + '/dataset.pkl', 'wb'))
 
-    train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
-                           collate_fn=lambda x: batch_loader(x, photo_path))
-    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size, collate_fn=lambda x: batch_loader(x, photo_path))
-    test_dlr = DataLoader(test_data, batch_size=config.batch_size, collate_fn=lambda x: batch_loader(x, photo_path))
+    train_dlr = DataLoader(train_data, batch_size=config.batch_size, num_workers=os.cpu_count(), shuffle=True,
+                           collate_fn=lambda x: batch_loader(x, train_data.sent_pool, photo_path))
+    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size, num_workers=os.cpu_count(),
+                           collate_fn=lambda x: batch_loader(x, valid_data.sent_pool, photo_path))
+    test_dlr = DataLoader(test_data, batch_size=config.batch_size, num_workers=os.cpu_count(),
+                          collate_fn=lambda x: batch_loader(x, test_data.sent_pool, photo_path))
 
-    Model = UMPR(config, word_emb).to(config.device)
+    # Train
+    # Model = UMPR(config, word_emb).to(config.device)
+    Model = torch.nn.DataParallel(UMPR(config, word_emb)).to(config.device)
     train(train_dlr, valid_dlr, Model, config, config.model_path)
 
+    # Evaluate
     test_loss = predict_mse(torch.load(config.model_path), test_dlr)
     logger.info(f"Test end, test mse is {test_loss:.6f}")

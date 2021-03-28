@@ -2,9 +2,6 @@ import os
 import sys
 import time
 import logging
-from concurrent.futures import as_completed
-from concurrent.futures.thread import ThreadPoolExecutor
-
 import numpy
 from PIL import Image
 import pandas as pd
@@ -56,39 +53,6 @@ def load_embedding(word2vec_file):
     return word_emb, word_dict
 
 
-def load_photos(photos_dir, resize=(224, 224), max_workers=36):
-    paths = []
-    for name in os.listdir(photos_dir):
-        path = os.path.join(photos_dir, name)
-        if os.path.isfile(path) and name.endswith('jpg'):
-            paths.append(path)
-
-    def load_image(img_path):
-        try:
-            image = Image.open(img_path).convert('RGB').resize(resize)
-            image = numpy.asarray(image) / 255
-            return os.path.basename(img_path)[:-4], image.transpose((2, 0, 1))
-        except Exception:
-            return img_path, None  # Damaged picture: {img_path}
-
-    pool = ThreadPoolExecutor(max_workers=max_workers)  # to read {len(paths)} pictures
-    tasks = [pool.submit(load_image, path) for path in paths]
-
-    photos_dict = dict()
-    damaged = []
-    for i, task in enumerate(as_completed(tasks)):
-        name, photo = task.result()
-        if photo is not None:
-            photos_dict[name] = photo
-        else:
-            damaged.append(name)
-        process_bar(i + 1, len(tasks), prefix='Loading photos')
-
-    for name in damaged:
-        print(f'## Failed to open {name}.jpg')
-    return photos_dict
-
-
 def predict_mse(model, dataloader):
     device = next(model.parameters()).device
     mse, sample_count = 0, 0
@@ -104,36 +68,31 @@ def predict_mse(model, dataloader):
     return mse / sample_count
 
 
-def pad_list(arr, dim1, dim2, pad_elem=0):  # 二维list调整长宽，截长补短
-    arr = arr[:dim1] + [[pad_elem] * dim2] * (dim1 - len(arr))  # dim 1
-    arr = [r[:dim2] + [pad_elem] * (dim2 - len(r)) for r in arr]  # dim 2
-    return arr
-
-
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, data_path, photo_json, word_dict, config):
         self.word_dict = word_dict
         self.s_count = config.sent_count
+        self.lowest_s_count = config.lowest_sent_count
         self.ui_s_count = config.ui_sent_count
         self.s_length = config.sent_length
-        self.lowest_s_count = config.lowest_sent_count  # lowest amount of sentences wrote by exactly one user/item
         self.PAD_WORD_idx = word_dict[config.PAD_WORD]
         self.photo_count = config.photo_count
 
         df = pd.read_csv(data_path)
-        df['review'] = df['review'].apply(self._cut_review)
-        self.retain_idx = [True] * len(df)  # Save the indices of empty samples, delete them at last.
+        df = df[df['review'].apply(lambda x: len(str(x))) > 5]
+        df['numbered_r'], self.sent_pool = self._get_sentence_pool(df)
+        self.retain_idx = [True] * df.shape[0]
         user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u for i).
         item_reviews = self._get_reviews(df, 'item_num', 'user_num')
-        ui_reviews = self._get_ui_review(df['review'])
+        ui_reviews = self._get_ui_review(df)
         photos_name = self._get_photos_name(photo_json, df['itemID'], config.view_size)
 
         self.data = (
-            [v for v, r in zip(user_reviews, self.retain_idx) if r],
-            [v for v, r in zip(item_reviews, self.retain_idx) if r],
-            [v for v, r in zip(ui_reviews, self.retain_idx) if r],
-            [v for v, r in zip(photos_name, self.retain_idx) if r],
-            [v for v, r in zip(df['rating'], self.retain_idx) if r],
+            [v for i, v in enumerate(user_reviews) if self.retain_idx[i]],
+            [v for i, v in enumerate(item_reviews) if self.retain_idx[i]],
+            [v for i, v in enumerate(ui_reviews) if self.retain_idx[i]],
+            [v for i, v in enumerate(photos_name) if self.retain_idx[i]],
+            [v for i, v in enumerate(df['rating']) if self.retain_idx[i]],
         )
 
     def __getitem__(self, idx):
@@ -142,87 +101,93 @@ class Dataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data[0])
 
-    def _get_reviews(self, df, lead='user_num', costar='item_num', max_workers=36):
-        # For every sample(user,item), gather reviews for user/item.
-        reviews_by_lead = dict(list(df[[costar, 'review']].groupby(df[lead])))  # Information for every user/item
+    def _get_sentence_pool(self, df):
+        rev_sent_id = list()
+        sent_pool = [[self.PAD_WORD_idx]]  # fill in with a null sentence
+        for i, review in enumerate(df['review']):
+            process_bar(i + 1, len(df), prefix=f'Loading sentences pool')
+            sentences = [sent for sent in str(review).strip('. ').split('.') if len(sent) > 5]  # split review by "."
+            rev_sent_id.append(list(range(len(sent_pool), len(sent_pool) + len(sentences))))
+            for sent in sentences:
+                sent_nums = [self.word_dict.get(w, self.PAD_WORD_idx) for w in sent.split()[:self.s_length]]  # cut sent
+                sent_pool.append(sent_nums)
+        return rev_sent_id, sent_pool
 
-        def gather_review(idx, lead_id, costar_id):
+    def _get_reviews(self, df, lead='user_num', costar='item_num'):
+        reviews_by_lead = dict(list(df[[costar, 'numbered_r']].groupby(df[lead])))  # Information for every user/item
+        results = []
+        for idx, (lead_id, costar_id) in enumerate(zip(df[lead], df[costar])):
+            process_bar(idx + 1, len(df[lead]), prefix=f'Loading sentences group by {lead}')
+            if not self.retain_idx[idx]:
+                results.append(None)
+                continue
             df_data = reviews_by_lead[lead_id]  # get information of lead, return DataFrame.
-            reviews = df_data['review'][df_data[costar] != costar_id]  # get reviews without review u for i.
-            sentences = [sent[:self.s_length] for r in reviews for sent in r]  # cut too long sentence!
-            if len(sentences) < self.lowest_s_count:
+            reviews = df_data['numbered_r'][df_data[costar] != costar_id]  # get reviews without that u to i.
+            sentences_id = [sent_id for r in reviews for sent_id in r]
+            if len(sentences_id) < self.lowest_s_count:
                 self.retain_idx[idx] = False
-            sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
-            sentences = sentences[:self.s_count] + [list()] * (self.s_count - len(sentences))  # Adjust number of sentences!
-            # sentences = pad_list(sentences, self.s_count, self.s_length)  # pad!
-            return idx, sentences
+                results.append(None)
+                continue
+            sentences_id.sort(key=lambda x: -len(self.sent_pool[x]))  # sort by length of sentence.
+            sentences_id = sentences_id[:self.s_count]
+            results.append(sentences_id)
+        return results  # shape(sample_count,sent_count)
 
-        pool = ThreadPoolExecutor(max_workers=max_workers)
-        tasks = [pool.submit(gather_review, i, x[0], x[1]) for i, x in enumerate(zip(df[lead], df[costar]))]
-
-        ret_sentences = [list()] * len(tasks)
-        for i, task in enumerate(as_completed(tasks)):
-            idx, sents = task.result()
-            ret_sentences[idx] = sents
-            process_bar(i + 1, len(tasks), prefix=f'Loading sentences of {lead}')
-        return ret_sentences
-
-    def _get_ui_review(self, reviews: pd.Series):
-        reviews = reviews.to_list()
-        for i, sentences in enumerate(reviews):
-            sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
-            sentences = sentences[:self.ui_s_count] + [list()] * (self.ui_s_count - len(sentences))  # Adjust number
-            sentences = [sent[:self.s_length] for sent in sentences]  # cut too long sentence!
-            # sentences = pad_list(sentences, self.ui_s_count, self.s_length)
-            reviews[i] = sentences
+    def _get_ui_review(self, df):
+        reviews = list()
+        for i, sentences in enumerate(df['numbered_r']):
+            process_bar(i + 1, len(df), prefix=f'Loading ui sentences')
+            if not self.retain_idx[i]:
+                reviews.append(None)
+                continue
+            sentences.sort(key=lambda x: -len(self.sent_pool[x]))  # sort by length of sentence.
+            sentences = sentences[:self.ui_s_count]
+            reviews.append(sentences)
         return reviews
 
-    def _cut_review(self, review):  # Split a sentence into words, and map each word to a unique number by dict.
-        try:
-            sentences = review.strip().split('.')
-            for i in range(len(sentences)):
-                sentences[i] = [self.word_dict.get(w, self.PAD_WORD_idx) for w in sentences[i].split()]
-            return sentences
-        except Exception:
-            return [list()]
-
-    def _get_photos_name(self, photos_json, item_id_list, view_size, max_workers=36):
+    def _get_photos_name(self, photos_json, item_id_list, view_size):
         photo_df = pd.read_json(photos_json, orient='records', lines=True)
         if 'label' not in photo_df.columns:
-            photo_df['label'] = 'None'  # Due to amazon have no label.
+            photo_df['label'] = 'unknown'  # Due to amazon have no label.
         label_index = dict([(label, i) for i, label in enumerate(photo_df['label'].drop_duplicates())])  # label: index
-        if len(label_index) != view_size:
-            print(f'Number of labels in photos.json is {len(label_index)}! Set Config().view_size={len(label_index)}!')
-            exit(1)
+        assert len(label_index) == view_size, f'By "{photos_json}", Config().view_size must be {len(label_index)}!'
 
         photos_by_item = dict(list(photo_df[['photo_id', 'label']].groupby(photo_df['business_id'])))  # iid: df
-
-        def get_photo_info(idx, iid):
+        photos_name = []
+        for idx, iid in enumerate(item_id_list):
+            process_bar(idx + 1, len(item_id_list), prefix=f'Loading photos')
+            if not self.retain_idx[idx]:
+                photos_name.append(None)
+                continue
             item_df = photos_by_item.get(iid, pd.DataFrame(columns=['photo_id', 'label']))  # all photos of this item.
             pid_by_label = dict(list(item_df['photo_id'].groupby(item_df['label'])))
             item_photos = [list()] * len(label_index)
             for label, label_idx in label_index.items():
-                pids = pid_by_label.get(label, pd.Series()).to_list()
+                pids = pid_by_label.get(label, pd.Series(dtype=str)).to_list()
                 if len(pids) < 1:
                     self.retain_idx[idx] = False
+                    item_photos = None
+                    break
                 pids = pids[:self.photo_count] + ['unk_name'] * (self.photo_count - len(pids))
-                # pids = [self.image_dict.get(name, numpy.zeros(self.photo_size)) for name in pids]  # 直接加载为图片
                 item_photos[label_idx] = pids
-            return idx, item_photos
+            photos_name.append(item_photos)
+        return photos_name  # shape(sample_count,view_count,photo_count)
 
-        pool = ThreadPoolExecutor(max_workers=max_workers)
-        tasks = [pool.submit(get_photo_info, idx, iid) for idx, iid in enumerate(item_id_list)]
 
-        photos_name = [list()] * len(tasks)
-        for i, task in enumerate(as_completed(tasks)):
-            idx, i_photos = task.result()
-            photos_name[idx] = i_photos
-            process_bar(i + 1, len(tasks), prefix=f'Loading photos')
-        return photos_name
+def pad_reviews(reviews, sent_pool, max_count=None, max_len=None, pad_s=0, pad=0):
+    if max_count is None:
+        max_count = max(len(i) for i in reviews)
+    reviews = [sents + [pad_s] * (max_count - len(sents)) for sents in reviews]
+
+    lengths = [[len(sent_pool[sent]) for sent in sents] for sents in reviews]  # sentence length
+    if max_len is None:
+        max_len = max(max(i) for i in lengths)
+    result = [[sent_pool[sent] + [pad] * (max_len - len(sent_pool[sent])) for sent in sents] for sents in reviews]
+    return result, lengths
 
 
 def get_image(name, photo_dir, resize=(224, 224)):
-    path = os.path.join(photo_dir, name + 'jpg')
+    path = os.path.join(photo_dir, name + '.jpg')
     try:
         image = Image.open(path).convert('RGB').resize(resize)
         image = numpy.asarray(image) / 255
@@ -231,27 +196,26 @@ def get_image(name, photo_dir, resize=(224, 224)):
         return numpy.zeros([3] + list(resize))  # default
 
 
-def batch_loader(batch_list, photo_dir, photo_size=(224, 224), pad_value=0):
+def batch_loader(batch_list, sent_pool, photo_dir, photo_size=(224, 224), pad_value=0):
     data = [list() for i in batch_list[0]]
-    lengths = [list() for i in range(3)]  # length of Ru/Ri/Rui
-    max_lengths = [0, 0, 0]  # Ru/Ri/Rui
     for sample in batch_list:
         for i, val in enumerate(sample):
-            if i in (0, 1, 2):  # reviews
-                lengths[i].append([max(1, len(s)) for s in val])
-                max_lengths[i] = max(max_lengths[i], max(lengths[i][-1]))
+            if i in (0, 1, 2):  # reviews val=[sent_id1, sent_id2, ...]
                 data[i].append(val)
             if i == 3:  # photos
                 data[i].append([[get_image(name, photo_dir, photo_size) for name in ps] for ps in val])
             if i == 4:  # ratings
                 data[i].append(val)
 
-    for i, batch_reviews in enumerate(data):
-        for x, sents in enumerate(batch_reviews):  # sents is a list of sentences per sample.
-            for y, s in enumerate(sents):
-                data[i][x][y] = s + [pad_value] * (max_lengths[i] - len(s))
-        if i == 2:
-            break
+    # pad sentences Ru and Ri
+    max_count, max_len = 0, 0
+    for ru, ri in zip(data[0], data[1]):
+        max_count = max(max_count, max(len(ru), len(ri)))
+        max_len = max(max_len, max(max([len(sent_pool[i]) for i in ru]), max([len(sent_pool[i]) for i in ri])))
+    lengths = [0, 0, 0]
+    data[0], lengths[0] = pad_reviews(data[0], sent_pool, max_count, max_len)
+    data[1], lengths[1] = pad_reviews(data[1], sent_pool, max_count, max_len)
+    data[2], lengths[2] = pad_reviews(data[2], sent_pool)
 
     return (
         torch.LongTensor(data[0]),

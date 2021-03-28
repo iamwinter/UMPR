@@ -58,13 +58,13 @@ python data/data_process.py --data_type amazon \
 python data/down_photos.py --photos_json ./data/music/photos.json
 ```
 
-+ Train and evaluate the model:
++ Train and evaluate the model. if use yelp dataset, you must set view_size=4.
 ```shell script
-python main.py --device cuda:0 --data_dir ./data/music
+python main.py --data_dir ./data/music --view_size 1
 ```
 + Test only:
 ```shell script
-python test.py --device cuda:0 --data_dir ./data/music --model_path ./model/default.pt
+python test.py --data_dir ./data/music --view_size 1 --model_path ./model/default.pt
 ```
 
 # Experiment
@@ -139,3 +139,7 @@ Performance comparison (mean squared error) on several datasets.
 + 2021.03.26
 
   - 对于图片集，一次性读入因内存不足而退出。解决：每个batch训练/测试前即时从磁盘中读取图片。
+
++ 2021.03.28
+
+  - 尝试yelp数据集时，内存还是不足，只好把sentence语句保存到“语句池”，每个batch训练时再读取sentence
