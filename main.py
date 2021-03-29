@@ -40,7 +40,7 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
                 print('Evaluate model to update best model...', end='\r')
                 valid_mse = predict_mse(model, valid_dataloader)
                 if best_loss > valid_mse:
-                    if type(model) is torch.nn.parallel.DataParallel:
+                    if hasattr(model, 'module'):
                         torch.save(model.module, model_path)
                     else:
                         torch.save(model, model_path)
@@ -85,29 +85,31 @@ if __name__ == '__main__':
     word_emb, word_dict = load_embedding(config.word2vec_file)
 
     try:
-        train_data, valid_data, test_data = pickle.load(open(config.data_dir + '/dataset.pkl', 'rb'))
+        train_data, valid_data = pickle.load(open(config.data_dir + '/dataset.pkl', 'rb'))
         logger.info('Loaded dataset from dataset.pkl!')
     except Exception:
         logger.debug('Loading train dataset.')
         train_data = Dataset(train_path, photo_json, word_dict, config)
         logger.debug('Loading valid dataset.')
         valid_data = Dataset(valid_path, photo_json, word_dict, config)
-        logger.debug('Loading test dataset.')
-        test_data = Dataset(test_path, photo_json, word_dict, config)
-        pickle.dump([train_data, valid_data, test_data], open(config.data_dir + '/dataset.pkl', 'wb'))
+        pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
 
-    train_dlr = DataLoader(train_data, batch_size=config.batch_size, num_workers=os.cpu_count(), shuffle=True,
+    train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
                            collate_fn=lambda x: batch_loader(x, train_data.sent_pool, photo_path))
-    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size, num_workers=os.cpu_count(),
+    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size,
                            collate_fn=lambda x: batch_loader(x, valid_data.sent_pool, photo_path))
-    test_dlr = DataLoader(test_data, batch_size=config.batch_size, num_workers=os.cpu_count(),
-                          collate_fn=lambda x: batch_loader(x, test_data.sent_pool, photo_path))
 
     # Train
-    # Model = UMPR(config, word_emb).to(config.device)
-    Model = torch.nn.DataParallel(UMPR(config, word_emb)).to(config.device)
+    Model = UMPR(config, word_emb).to(config.device)
+    # Model = torch.nn.DataParallel(UMPR(config, word_emb)).to(config.device)
     train(train_dlr, valid_dlr, Model, config, config.model_path)
 
     # Evaluate
+    del train_data, train_dlr, valid_data, valid_dlr, Model
+    logger.debug('Loading test dataset.')
+    test_data = Dataset(test_path, photo_json, word_dict, config)
+    test_dlr = DataLoader(test_data, batch_size=config.batch_size,
+                          collate_fn=lambda x: batch_loader(x, test_data.sent_pool, photo_path))
+    logger.info('Start to test.')
     test_loss = predict_mse(torch.load(config.model_path), test_dlr)
     logger.info(f"Test end, test mse is {test_loss:.6f}")

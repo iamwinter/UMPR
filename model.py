@@ -9,17 +9,16 @@ class ImprovedRnn(nn.Module):
         super().__init__()
         self.module = module(*args, **kwargs)
 
-    def forward(self, input, lengths):  # input shape(batch_size, seq_len, input_size)
+    def forward(self, data, lengths):  # data shape(batch_size, seq_len, input_size)
         if not hasattr(self, '_flattened'):
             self.module.flatten_parameters()
             setattr(self, '_flattened', True)
-        idx = torch.argsort(lengths, descending=True)
-        package = nn.utils.rnn.pack_padded_sequence(input[idx], lengths[idx].cpu(), batch_first=self.module.batch_first)
+        bf = self.module.batch_first
+        max_len = data.shape[1]
+        package = nn.utils.rnn.pack_padded_sequence(data, lengths.cpu(), batch_first=bf, enforce_sorted=False)
         result, hidden = self.module(package)
-        result, lens = nn.utils.rnn.pad_packed_sequence(result, batch_first=self.module.batch_first)
-        output = torch.zeros_like(result)
-        output[idx] = result
-        return output, hidden
+        result, lens = nn.utils.rnn.pad_packed_sequence(result, batch_first=bf, total_length=max_len)
+        return result[package.unsorted_indices], hidden
 
 
 class RNet(nn.Module):

@@ -143,3 +143,16 @@ Performance comparison (mean squared error) on several datasets.
 + 2021.03.28
 
   - 尝试yelp数据集时，内存还是不足，只好把sentence语句保存到“语句池”，每个batch训练时再读取sentence
+
++ 2021.03.29
+
+  - 多GPU训练时，不定长GRU潜在的**巨坑**：使用pytorch的DataParallel实现多GPU训练时，
+    它会将一个batch的数据均分输入到多个GPU上，
+    于是不定长GRU的输入`lengths`只是一个batch中的一部分，
+    **整个batch上的最大length值可能并不出现在当前GPU的`lengths`中**，但是序列（GRU的`input`）
+    却早已被pad为最大长度，即`lengths`最大值小于实际pad后的序列长度。
+    然后，`nn.utils.rnn.pack_padded_sequence`是依据`lengths`来pack的，
+    所以最后`ImprovedRnn`的输出tensor中`序列长度那一个维度`就被缩短了，
+    从而引起后续计算报维度不匹配的错误！
+    解决：在GRU之后，执行`nn.utils.rnn.pad_packed_sequence`时设置参数`total_length`
+    为最大长度！
