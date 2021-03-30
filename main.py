@@ -9,7 +9,7 @@ from utils import Dataset, date, predict_mse, load_embedding, batch_loader, proc
 from model import UMPR
 
 
-def train(train_dataloader, valid_dataloader, model, config, model_path):
+def training(train_dataloader, valid_dataloader, model, config, model_path):
     logger.info('Start to train!')
     valid_mse = predict_mse(model, valid_dataloader)
     logger.info(f'Initial validation mse is {valid_mse:.6f}')
@@ -22,23 +22,21 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
     for epoch in range(config.train_epochs):
         total_loss, total_samples = 0, 0
         for i, batch in enumerate(train_dataloader):
-            cur_batch = map(lambda x: x.to(config.device), batch)
-            user_reviews, item_reviews, reviews, u_lengths, i_lengths, ui_lengths, photos, ratings = cur_batch
+            process_bar(i + 1, len(train_dataloader), prefix=f'Training epoch {epoch}')
             model.train()
-            pred, loss = model(user_reviews, item_reviews, reviews, u_lengths, i_lengths, ui_lengths, photos, ratings)
+            pred, loss = model(*[x.to(config.device) for x in batch])
             loss = loss.mean()
             opt.zero_grad()
             loss.backward()
             opt.step()
 
-            total_loss += loss.item() * len(ratings)
-            total_samples += len(ratings)
-            process_bar(i + 1, len(train_dataloader), prefix=f'Training epoch {epoch}')
+            total_loss += loss.item() * len(pred)
+            total_samples += len(pred)
 
             batch_counter += 1
             if batch_counter % 500 == 0:
-                print('Evaluate model to update best model...', end='\r')
                 valid_mse = predict_mse(model, valid_dataloader)
+                logger.info(f'## Evaluate model on validation and loss is {valid_mse:.6f}')
                 if best_loss > valid_mse:
                     if hasattr(model, 'module'):
                         torch.save(model.module, model_path)
@@ -47,15 +45,46 @@ def train(train_dataloader, valid_dataloader, model, config, model_path):
                     best_loss = valid_mse
 
         lr_sch.step()
-        valid_mse = predict_mse(model, valid_dataloader)
         train_loss = total_loss / total_samples
-        logger.info(f"Epoch {epoch:3d}; train loss {train_loss:.6f}; validation mse {valid_mse:.6f}({best_loss:.6f})")
-        if batch_counter == 50000:
+        logger.info(f"Epoch {epoch:3d}; train loss {train_loss:.6f}")
+        if batch_counter == 20000:
             break
 
     end_time = time.perf_counter()
     second = int(end_time - start_time)
     logger.info(f'End of training! Time used {second // 3600}:{second % 3600 // 60}:{second % 60}.')
+
+
+def train():
+    try:
+        train_data, valid_data = pickle.load(open(config.data_dir + '/dataset.pkl', 'rb'))
+        logger.info('Loaded dataset from dataset.pkl!')
+    except Exception:
+        logger.debug('Loading train dataset.')
+        train_data = Dataset(train_path, photo_json, word_dict, config)
+        logger.debug('Loading valid dataset.')
+        valid_data = Dataset(valid_path, photo_json, word_dict, config)
+        pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
+
+    train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
+                           collate_fn=lambda x: batch_loader(x, train_data.sent_pool, photo_path))
+    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size,
+                           collate_fn=lambda x: batch_loader(x, valid_data.sent_pool, photo_path))
+
+    # model = UMPR(config, word_emb).to(config.device)
+    model = torch.nn.DataParallel(UMPR(config, word_emb)).to(config.device)
+    training(train_dlr, valid_dlr, model, config, config.model_path)
+
+
+def test():
+    logger.debug('Loading test dataset.')
+    test_data = Dataset(test_path, photo_json, word_dict, config)
+    test_dlr = DataLoader(test_data, batch_size=config.batch_size * 2,
+                          collate_fn=lambda x: batch_loader(x, test_data.sent_pool, photo_path))
+    logger.info('Start to test.')
+    model = torch.load(config.model_path)
+    test_loss = predict_mse(model, test_dlr)
+    logger.info(f"Test end, test mse is {test_loss:.6f}")
 
 
 if __name__ == '__main__':
@@ -84,32 +113,5 @@ if __name__ == '__main__':
     logger.debug('Load word embedding...')
     word_emb, word_dict = load_embedding(config.word2vec_file)
 
-    try:
-        train_data, valid_data = pickle.load(open(config.data_dir + '/dataset.pkl', 'rb'))
-        logger.info('Loaded dataset from dataset.pkl!')
-    except Exception:
-        logger.debug('Loading train dataset.')
-        train_data = Dataset(train_path, photo_json, word_dict, config)
-        logger.debug('Loading valid dataset.')
-        valid_data = Dataset(valid_path, photo_json, word_dict, config)
-        pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
-
-    train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
-                           collate_fn=lambda x: batch_loader(x, train_data.sent_pool, photo_path))
-    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size,
-                           collate_fn=lambda x: batch_loader(x, valid_data.sent_pool, photo_path))
-
-    # Train
-    Model = UMPR(config, word_emb).to(config.device)
-    # Model = torch.nn.DataParallel(UMPR(config, word_emb)).to(config.device)
-    train(train_dlr, valid_dlr, Model, config, config.model_path)
-
-    # Evaluate
-    del train_data, train_dlr, valid_data, valid_dlr, Model
-    logger.debug('Loading test dataset.')
-    test_data = Dataset(test_path, photo_json, word_dict, config)
-    test_dlr = DataLoader(test_data, batch_size=config.batch_size,
-                          collate_fn=lambda x: batch_loader(x, test_data.sent_pool, photo_path))
-    logger.info('Start to test.')
-    test_loss = predict_mse(torch.load(config.model_path), test_dlr)
-    logger.info(f"Test end, test mse is {test_loss:.6f}")
+    train()
+    test()

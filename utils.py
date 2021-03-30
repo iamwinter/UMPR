@@ -59,12 +59,10 @@ def predict_mse(model, dataloader):
     with torch.no_grad():
         model.eval()
         for i, batch in enumerate(dataloader):
-            cur_batch = map(lambda x: x.to(device), batch)
-            user_reviews, item_reviews, reviews, u_lengths, i_lengths, ui_lengths, photos, ratings = cur_batch
-            pred, loss = model(user_reviews, item_reviews, reviews, u_lengths, i_lengths, ui_lengths, photos, ratings)
-            mse += F.mse_loss(pred, ratings, reduction='sum').item()
-            sample_count += len(ratings)
             process_bar(i + 1, len(dataloader), prefix='Evaluate')
+            pred, loss = model(*[x.to(device) for x in batch])
+            mse += F.mse_loss(pred, batch[-1].to(device), reduction='sum').item()
+            sample_count += len(pred)
     return mse / sample_count
 
 
@@ -82,10 +80,10 @@ class Dataset(torch.utils.data.Dataset):
         df = df[df['review'].apply(lambda x: len(str(x))) > 5]
         df['numbered_r'], self.sent_pool = self._get_sentence_pool(df)
         self.retain_idx = [True] * df.shape[0]
+        photos_name = self._get_photos_name(photo_json, df['itemID'], config.view_size)
         user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u for i).
         item_reviews = self._get_reviews(df, 'item_num', 'user_num')
         ui_reviews = self._get_ui_review(df)
-        photos_name = self._get_photos_name(photo_json, df['itemID'], config.view_size)
 
         self.data = (
             [v for i, v in enumerate(user_reviews) if self.retain_idx[i]],
@@ -149,8 +147,8 @@ class Dataset(torch.utils.data.Dataset):
         photo_df = pd.read_json(photos_json, orient='records', lines=True)
         if 'label' not in photo_df.columns:
             photo_df['label'] = 'unknown'  # Due to amazon have no label.
-        label_index = dict([(label, i) for i, label in enumerate(photo_df['label'].drop_duplicates())])  # label: index
-        assert len(label_index) == view_size, f'By "{photos_json}", Config().view_size must be {len(label_index)}!'
+        self.labels = photo_df['label'].drop_duplicates().to_list()
+        assert len(self.labels) == view_size, f'By "{photos_json}", Config().view_size must be {len(self.labels)}!'
 
         photos_by_item = dict(list(photo_df[['photo_id', 'label']].groupby(photo_df['business_id'])))  # iid: df
         photos_name = []
@@ -161,15 +159,15 @@ class Dataset(torch.utils.data.Dataset):
                 continue
             item_df = photos_by_item.get(iid, pd.DataFrame(columns=['photo_id', 'label']))  # all photos of this item.
             pid_by_label = dict(list(item_df['photo_id'].groupby(item_df['label'])))
-            item_photos = [list()] * len(label_index)
-            for label, label_idx in label_index.items():
+            item_photos = list()
+            for label in self.labels:
                 pids = pid_by_label.get(label, pd.Series(dtype=str)).to_list()
                 if len(pids) < 1:
                     self.retain_idx[idx] = False
                     item_photos = None
                     break
                 pids = pids[:self.photo_count] + ['unk_name'] * (self.photo_count - len(pids))
-                item_photos[label_idx] = pids
+                item_photos.append(pids)
             photos_name.append(item_photos)
         return photos_name  # shape(sample_count,view_count,photo_count)
 

@@ -142,7 +142,8 @@ Performance comparison (mean squared error) on several datasets.
 
 + 2021.03.28
 
-  - 尝试yelp数据集时，内存还是不足，只好把sentence语句保存到“语句池”，每个batch训练时再读取sentence
+  - 尝试yelp数据集时，内存还是不足，只好把sentence语句保存到“语句池”，
+  每个batch训练时再读取sentence
 
 + 2021.03.29
 
@@ -153,6 +154,13 @@ Performance comparison (mean squared error) on several datasets.
     却早已被pad为最大长度，即`lengths`最大值小于实际pad后的序列长度。
     然后，`nn.utils.rnn.pack_padded_sequence`是依据`lengths`来pack的，
     所以最后`ImprovedRnn`的输出tensor中`序列长度那一个维度`就被缩短了，
-    从而引起后续计算报维度不匹配的错误！
+    从而引起后续计算报维度不匹配的错误！  
     解决：在GRU之后，执行`nn.utils.rnn.pad_packed_sequence`时设置参数`total_length`
     为最大长度！
+    
+  - 用`DataParallel`进行多GPU训练报一个警告：`/torch/nn/parallel/_functions.py:64: 
+    UserWarning: Was asked to gather along dimension 0, 
+    but all input tensors were scalars; 
+    will instead unsqueeze and return a vector.`
+    原因是网络的输出`loss`是个标量，多个GPU输出的`loss`合并时，只能将这些标量合并为向量。  
+    解决：我删掉了源码中这句警告语句。
