@@ -54,14 +54,13 @@ def load_embedding(word2vec_file):
 
 
 def predict_mse(model, dataloader):
-    device = next(model.parameters()).device
     mse, sample_count = 0, 0
     with torch.no_grad():
         model.eval()
         for i, batch in enumerate(dataloader):
             process_bar(i + 1, len(dataloader), prefix='Evaluate')
-            pred, loss = model(*[x.to(device) for x in batch])
-            mse += F.mse_loss(pred, batch[-1].to(device), reduction='sum').item()
+            pred, loss = model(*batch)
+            mse += F.mse_loss(pred, batch[-1].to(pred.device), reduction='sum').item()
             sample_count += len(pred)
     return mse / sample_count
 
@@ -121,14 +120,14 @@ class Dataset(torch.utils.data.Dataset):
                 continue
             df_data = reviews_by_lead[lead_id]  # get information of lead, return DataFrame.
             reviews = df_data['numbered_r'][df_data[costar] != costar_id]  # get reviews without that u to i.
-            sentences_id = [sent_id for r in reviews for sent_id in r]
-            if len(sentences_id) < self.lowest_s_count:
+            sentences = [self.sent_pool[sent_id] for r in reviews for sent_id in r]
+            if len(sentences) < self.lowest_s_count:
                 self.retain_idx[idx] = False
                 results.append(None)
                 continue
-            sentences_id.sort(key=lambda x: -len(self.sent_pool[x]))  # sort by length of sentence.
-            sentences_id = sentences_id[:self.s_count]
-            results.append(sentences_id)
+            sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
+            sentences = sentences[:self.s_count]
+            results.append(sentences)
         return results  # shape(sample_count,sent_count)
 
     def _get_ui_review(self, df):
@@ -138,7 +137,8 @@ class Dataset(torch.utils.data.Dataset):
             if not self.retain_idx[i]:
                 reviews.append(None)
                 continue
-            sentences.sort(key=lambda x: -len(self.sent_pool[x]))  # sort by length of sentence.
+            sentences = [self.sent_pool[i] for i in sentences]
+            sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
             sentences = sentences[:self.ui_s_count]
             reviews.append(sentences)
         return reviews
@@ -172,15 +172,15 @@ class Dataset(torch.utils.data.Dataset):
         return photos_name  # shape(sample_count,view_count,photo_count)
 
 
-def pad_reviews(reviews, sent_pool, max_count=None, max_len=None, pad_s=0, pad=0):
+def pad_reviews(reviews, max_count=None, max_len=None, pad=0):
     if max_count is None:
         max_count = max(len(i) for i in reviews)
-    reviews = [sents + [pad_s] * (max_count - len(sents)) for sents in reviews]
+    reviews = [sents + [list()] * (max_count - len(sents)) for sents in reviews]
 
-    lengths = [[len(sent_pool[sent]) for sent in sents] for sents in reviews]  # sentence length
+    lengths = [[max(1, len(sent)) for sent in sents] for sents in reviews]  # sentence length
     if max_len is None:
         max_len = max(max(i) for i in lengths)
-    result = [[sent_pool[sent] + [pad] * (max_len - len(sent_pool[sent])) for sent in sents] for sents in reviews]
+    result = [[sent + [pad] * (max_len - len(sent)) for sent in sents] for sents in reviews]
     return result, lengths
 
 
@@ -194,7 +194,7 @@ def get_image(name, photo_dir, resize=(224, 224)):
         return numpy.zeros([3] + list(resize))  # default
 
 
-def batch_loader(batch_list, sent_pool, photo_dir, photo_size=(224, 224), pad_value=0):
+def batch_loader(batch_list, photo_dir, photo_size=(224, 224), pad=0):
     data = [list() for i in batch_list[0]]
     for sample in batch_list:
         for i, val in enumerate(sample):
@@ -209,11 +209,11 @@ def batch_loader(batch_list, sent_pool, photo_dir, photo_size=(224, 224), pad_va
     max_count, max_len = 0, 0
     for ru, ri in zip(data[0], data[1]):
         max_count = max(max_count, max(len(ru), len(ri)))
-        max_len = max(max_len, max(max([len(sent_pool[i]) for i in ru]), max([len(sent_pool[i]) for i in ri])))
+        max_len = max(max_len, max(max([len(i) for i in ru]), max([len(i) for i in ri])))
     lengths = [0, 0, 0]
-    data[0], lengths[0] = pad_reviews(data[0], sent_pool, max_count, max_len)
-    data[1], lengths[1] = pad_reviews(data[1], sent_pool, max_count, max_len)
-    data[2], lengths[2] = pad_reviews(data[2], sent_pool)
+    data[0], lengths[0] = pad_reviews(data[0], max_count, max_len)
+    data[1], lengths[1] = pad_reviews(data[1], max_count, max_len)
+    data[2], lengths[2] = pad_reviews(data[2])
 
     return (
         torch.LongTensor(data[0]),

@@ -244,6 +244,10 @@ class UMPR(nn.Module):
         )
 
     def forward(self, user_reviews, item_reviews, ui_reviews, u_lengths, i_lengths, ui_lengths, photos, labels):
+        device = self.embedding.weight.device
+        user_reviews, item_reviews, ui_reviews = [v.to(device) for v in (user_reviews, item_reviews, ui_reviews)]
+        photos, labels = [v.to(device) for v in (photos, labels)]
+
         user_emb = self.embedding(user_reviews)  # (batch_size, sent_count, sent_length, emb_size)
         item_emb = self.embedding(item_reviews)
         ui_emb = self.embedding(ui_reviews)

@@ -24,7 +24,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
         for i, batch in enumerate(train_dataloader):
             process_bar(i + 1, len(train_dataloader), prefix=f'Training epoch {epoch}')
             model.train()
-            pred, loss = model(*[x.to(config.device) for x in batch])
+            pred, loss = model(*batch)
             loss = loss.mean()
             opt.zero_grad()
             loss.backward()
@@ -34,7 +34,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
             total_samples += len(pred)
 
             batch_counter += 1
-            if batch_counter % 500 == 0:
+            if batch_counter % 500 == 0 or batch_counter % 500 > 100 and i + 1 == len(train_dataloader):
                 valid_mse = predict_mse(model, valid_dataloader)
                 logger.info(f'## Evaluate model on validation and loss is {valid_mse:.6f}')
                 if best_loss > valid_mse:
@@ -47,7 +47,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
         lr_sch.step()
         train_loss = total_loss / total_samples
         logger.info(f"Epoch {epoch:3d}; train loss {train_loss:.6f}")
-        if batch_counter == 20000:
+        if batch_counter > 20000:
             break
 
     end_time = time.perf_counter()
@@ -67,9 +67,9 @@ def train():
         pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
 
     train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
-                           collate_fn=lambda x: batch_loader(x, train_data.sent_pool, photo_path))
+                           collate_fn=lambda x: batch_loader(x, photo_path))
     valid_dlr = DataLoader(valid_data, batch_size=config.batch_size,
-                           collate_fn=lambda x: batch_loader(x, valid_data.sent_pool, photo_path))
+                           collate_fn=lambda x: batch_loader(x, photo_path))
 
     # model = UMPR(config, word_emb).to(config.device)
     model = torch.nn.DataParallel(UMPR(config, word_emb)).to(config.device)
@@ -80,7 +80,7 @@ def test():
     logger.debug('Loading test dataset.')
     test_data = Dataset(test_path, photo_json, word_dict, config)
     test_dlr = DataLoader(test_data, batch_size=config.batch_size * 2,
-                          collate_fn=lambda x: batch_loader(x, test_data.sent_pool, photo_path))
+                          collate_fn=lambda x: batch_loader(x, photo_path))
     logger.info('Start to test.')
     model = torch.load(config.model_path)
     test_loss = predict_mse(model, test_dlr)
