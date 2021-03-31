@@ -138,12 +138,14 @@ Performance comparison (mean squared error) on several datasets.
 
 + 2021.03.26
 
-  - 对于图片集，一次性读入因内存不足而退出。解决：每个batch训练/测试前即时从磁盘中读取图片。
+  - 对于图片集，一次性读入因内存不足而退出。  
+  解决：Dataset只存储图片路径，每个batch训练/测试时即时从磁盘中读取图片。
 
 + 2021.03.28
 
-  - 尝试yelp数据集时，内存还是不足，只好把sentence语句保存到“语句池”，
-  每个batch训练时再读取sentence
+  - 尝试yelp数据集时，内存不足。  
+    解决：把sentence语句保存到“语句池”，统计语句时提取语句，
+    此时python只会得到其引用，从而节省内存
 
 + 2021.03.29
 

@@ -61,15 +61,14 @@ def train():
         logger.info('Loaded dataset from dataset.pkl!')
     except Exception:
         logger.debug('Loading train dataset.')
-        train_data = Dataset(train_path, photo_json, word_dict, config)
+        train_data = Dataset(train_path, photo_json, photo_path, word_dict, config)
         logger.debug('Loading valid dataset.')
-        valid_data = Dataset(valid_path, photo_json, word_dict, config)
+        valid_data = Dataset(valid_path, photo_json, photo_path, word_dict, config)
         pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
 
-    train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
-                           collate_fn=lambda x: batch_loader(x, photo_path))
-    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size,
-                           collate_fn=lambda x: batch_loader(x, photo_path))
+    train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True, num_workers=2,
+                           collate_fn=lambda x: batch_loader(x))
+    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size, collate_fn=lambda x: batch_loader(x))
 
     # model = UMPR(config, word_emb).to(config.device)
     model = torch.nn.DataParallel(UMPR(config, word_emb)).to(config.device)
@@ -78,9 +77,8 @@ def train():
 
 def test():
     logger.debug('Loading test dataset.')
-    test_data = Dataset(test_path, photo_json, word_dict, config)
-    test_dlr = DataLoader(test_data, batch_size=config.batch_size * 2,
-                          collate_fn=lambda x: batch_loader(x, photo_path))
+    test_data = Dataset(test_path, photo_json, photo_path, word_dict, config)
+    test_dlr = DataLoader(test_data, batch_size=config.batch_size * 2, collate_fn=lambda x: batch_loader(x))
     logger.info('Start to test.')
     model = torch.load(config.model_path)
     test_loss = predict_mse(model, test_dlr)

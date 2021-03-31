@@ -66,20 +66,19 @@ def predict_mse(model, dataloader):
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, data_path, photo_json, word_dict, config):
+    def __init__(self, data_path, photo_json, photo_dir, word_dict, config):
         self.word_dict = word_dict
         self.s_count = config.sent_count
         self.lowest_s_count = config.lowest_sent_count
         self.ui_s_count = config.ui_sent_count
         self.s_length = config.sent_length
-        self.PAD_WORD_idx = word_dict[config.PAD_WORD]
         self.photo_count = config.photo_count
 
         df = pd.read_csv(data_path)
         df = df[df['review'].apply(lambda x: len(str(x))) > 5]
-        df['numbered_r'], self.sent_pool = self._get_sentence_pool(df)
+        df['numbered_r'], self.sent_pool = self._get_sentence_pool(df, pad_value=word_dict[config.PAD_WORD])
         self.retain_idx = [True] * df.shape[0]
-        photos_name = self._get_photos_name(photo_json, df['itemID'], config.view_size)
+        photos_name = self._get_photos_name(photo_json, photo_dir, df['itemID'], config.view_size)
         user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u for i).
         item_reviews = self._get_reviews(df, 'item_num', 'user_num')
         ui_reviews = self._get_ui_review(df)
@@ -98,15 +97,15 @@ class Dataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data[0])
 
-    def _get_sentence_pool(self, df):
+    def _get_sentence_pool(self, df, pad_value=0):
         rev_sent_id = list()
-        sent_pool = [[self.PAD_WORD_idx]]  # fill in with a null sentence
+        sent_pool = [[pad_value]]  # fill in with a null sentence
         for i, review in enumerate(df['review']):
             process_bar(i + 1, len(df), prefix=f'Loading sentences pool')
             sentences = [sent for sent in str(review).strip('. ').split('.') if len(sent) > 5]  # split review by "."
             rev_sent_id.append(list(range(len(sent_pool), len(sent_pool) + len(sentences))))
             for sent in sentences:
-                sent_nums = [self.word_dict.get(w, self.PAD_WORD_idx) for w in sent.split()[:self.s_length]]  # cut sent
+                sent_nums = [self.word_dict.get(w, pad_value) for w in sent.split()[:self.s_length]]  # cut sent
                 sent_pool.append(sent_nums)
         return rev_sent_id, sent_pool
 
@@ -143,11 +142,13 @@ class Dataset(torch.utils.data.Dataset):
             reviews.append(sentences)
         return reviews
 
-    def _get_photos_name(self, photos_json, item_id_list, view_size):
+    def _get_photos_name(self, photos_json, photo_dir, item_id_list, view_size):
         photo_df = pd.read_json(photos_json, orient='records', lines=True)
-        if 'label' not in photo_df.columns:
-            photo_df['label'] = 'unknown'  # Due to amazon have no label.
-        self.labels = photo_df['label'].drop_duplicates().to_list()
+        if 'yelp' in photo_dir:
+            self.labels = ['food', 'inside', 'outside', 'drink', 'menu']
+        else:  # amazon
+            self.labels = ['unknown']
+            photo_df['label'] = self.labels[0]  # Due to amazon have no label.
         assert len(self.labels) == view_size, f'By "{photos_json}", Config().view_size must be {len(self.labels)}!'
 
         photos_by_item = dict(list(photo_df[['photo_id', 'label']].groupby(photo_df['business_id'])))  # iid: df
@@ -166,7 +167,8 @@ class Dataset(torch.utils.data.Dataset):
                     self.retain_idx[idx] = False
                     item_photos = None
                     break
-                pids = pids[:self.photo_count] + ['unk_name'] * (self.photo_count - len(pids))
+                pids = pids[:self.photo_count] + ['unknown'] * (self.photo_count - len(pids))
+                pids = [os.path.join(photo_dir, name + '.jpg') for name in pids]
                 item_photos.append(pids)
             photos_name.append(item_photos)
         return photos_name  # shape(sample_count,view_count,photo_count)
@@ -184,8 +186,7 @@ def pad_reviews(reviews, max_count=None, max_len=None, pad=0):
     return result, lengths
 
 
-def get_image(name, photo_dir, resize=(224, 224)):
-    path = os.path.join(photo_dir, name + '.jpg')
+def get_image(path, resize):
     try:
         image = Image.open(path).convert('RGB').resize(resize)
         image = numpy.asarray(image) / 255
@@ -194,14 +195,14 @@ def get_image(name, photo_dir, resize=(224, 224)):
         return numpy.zeros([3] + list(resize))  # default
 
 
-def batch_loader(batch_list, photo_dir, photo_size=(224, 224), pad=0):
+def batch_loader(batch_list, photo_size=(224, 224), pad=0):
     data = [list() for i in batch_list[0]]
     for sample in batch_list:
         for i, val in enumerate(sample):
             if i in (0, 1, 2):  # reviews val=[sent_id1, sent_id2, ...]
                 data[i].append(val)
             if i == 3:  # photos
-                data[i].append([[get_image(name, photo_dir, photo_size) for name in ps] for ps in val])
+                data[i].append([[get_image(path, photo_size) for path in ps] for ps in val])
             if i == 4:  # ratings
                 data[i].append(val)
 
@@ -211,9 +212,9 @@ def batch_loader(batch_list, photo_dir, photo_size=(224, 224), pad=0):
         max_count = max(max_count, max(len(ru), len(ri)))
         max_len = max(max_len, max(max([len(i) for i in ru]), max([len(i) for i in ri])))
     lengths = [0, 0, 0]
-    data[0], lengths[0] = pad_reviews(data[0], max_count, max_len)
-    data[1], lengths[1] = pad_reviews(data[1], max_count, max_len)
-    data[2], lengths[2] = pad_reviews(data[2])
+    data[0], lengths[0] = pad_reviews(data[0], max_count, max_len, pad=pad)
+    data[1], lengths[1] = pad_reviews(data[1], max_count, max_len, pad=pad)
+    data[2], lengths[2] = pad_reviews(data[2], pad=pad)
 
     return (
         torch.LongTensor(data[0]),
