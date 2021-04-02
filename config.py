@@ -17,7 +17,6 @@ class Config:
     log_path = 'log/default.txt'
     model_path = 'model/default.pt'
 
-    PAD_WORD = '<UNK>'
     sent_count = 20  # number of sentence per user/item
     lowest_sent_count = 5
     ui_sent_count = 5  # number of sentence in a review that u to i

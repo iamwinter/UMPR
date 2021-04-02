@@ -1,73 +1,14 @@
 import os
-import sys
-import time
-import logging
 import numpy
-from PIL import Image
 import pandas as pd
 import torch
-from torch.nn import functional as F
+from PIL import Image
 
-
-def get_logger(log_file=None, file_level=logging.INFO, stdout_level=logging.DEBUG, logger_name=__name__):
-    logging.root.setLevel(0)
-    formatter = logging.Formatter('%(asctime)s %(levelname)5s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    _logger = logging.getLogger(logger_name)
-
-    if log_file is not None:
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(level=file_level)
-        file_handler.setFormatter(formatter)
-        _logger.addHandler(file_handler)
-
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setLevel(level=stdout_level)
-    stream_handler.setFormatter(formatter)
-    _logger.addHandler(stream_handler)
-    return _logger
-
-
-def date(f='%Y-%m-%d %H:%M:%S'):
-    return time.strftime(f, time.localtime())
-
-
-def process_bar(current, total, prefix='', auto_rm=True):
-    bar = '=' * int(current / total * 50)
-    bar = f' {prefix} |{bar.ljust(50)}| ({current}/{total}) {current / total:.1%} | '
-    print(bar, end='\r', flush=True)
-    if auto_rm and current == total:
-        print(end=('\r' + ' ' * len(bar) + '\r'), flush=True)
-
-
-def load_embedding(word2vec_file):
-    with open(word2vec_file, encoding='utf-8') as f:
-        word_emb = list()
-        word_dict = dict()
-        word_emb.append([0])
-        word_dict['<UNK>'] = 0
-        for line in f.readlines():
-            tokens = line.split(' ')
-            word_emb.append([float(i) for i in tokens[1:]])
-            word_dict[tokens[0]] = len(word_dict)
-        word_emb[0] = [0] * len(word_emb[1])
-    return word_emb, word_dict
-
-
-def predict_mse(model, dataloader):
-    mse, sample_count = 0, 0
-    with torch.no_grad():
-        model.eval()
-        for i, batch in enumerate(dataloader):
-            process_bar(i + 1, len(dataloader), prefix='Evaluate')
-            pred, loss = model(*batch)
-            mse += F.mse_loss(pred, batch[-1].to(pred.device), reduction='sum').item()
-            sample_count += len(pred)
-    return mse / sample_count
+from src.helpers import process_bar
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, data_path, photo_json, photo_dir, word_dict, config):
-        self.word_dict = word_dict
+    def __init__(self, data_path, photo_json, photo_dir, word2vec, config):
         self.s_count = config.sent_count
         self.lowest_s_count = config.lowest_sent_count
         self.ui_s_count = config.ui_sent_count
@@ -76,7 +17,7 @@ class Dataset(torch.utils.data.Dataset):
 
         df = pd.read_csv(data_path)
         df = df[df['review'].apply(lambda x: len(str(x))) > 5]
-        df['numbered_r'], self.sent_pool = self._get_sentence_pool(df, pad_value=word_dict[config.PAD_WORD])
+        df['numbered_r'], self.sent_pool = self._get_sentence_pool(df, word2vec)
         self.retain_idx = [True] * df.shape[0]
         photos_name = self._get_photos_name(photo_json, photo_dir, df['itemID'], config.view_size)
         user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u for i).
@@ -97,15 +38,15 @@ class Dataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data[0])
 
-    def _get_sentence_pool(self, df, pad_value=0):
+    def _get_sentence_pool(self, df, w2v):
         rev_sent_id = list()
-        sent_pool = [[pad_value]]  # fill in with a null sentence
+        sent_pool = [[0]]  # fill in with a null sentence
         for i, review in enumerate(df['review']):
             process_bar(i + 1, len(df), prefix=f'Loading sentences pool')
             sentences = [sent for sent in str(review).strip('. ').split('.') if len(sent) > 5]  # split review by "."
             rev_sent_id.append(list(range(len(sent_pool), len(sent_pool) + len(sentences))))
             for sent in sentences:
-                sent_nums = [self.word_dict.get(w, pad_value) for w in sent.split()[:self.s_length]]  # cut sent
+                sent_nums = w2v.sent2indices(sent)[:self.s_length]  # cut sent
                 sent_pool.append(sent_nums)
         return rev_sent_id, sent_pool
 

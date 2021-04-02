@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from config import Config
-from utils import Dataset, predict_mse, load_embedding, batch_loader, process_bar, get_logger
+from src import Dataset, predict_mse, load_embedding, batch_loader, process_bar, get_logger
 
 
 if __name__ == '__main__':

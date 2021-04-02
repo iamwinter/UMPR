@@ -5,8 +5,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from config import Config
-from utils import Dataset, date, predict_mse, load_embedding, batch_loader, process_bar, get_logger
-from model import UMPR
+from src.dataset import Dataset, batch_loader
+from src.evaluate import predict_mse
+from src.helpers import process_bar, get_logger, date
+from src.word2vec import Word2vec
+from src.model import UMPR
 
 
 def training(train_dataloader, valid_dataloader, model, config, model_path):
@@ -61,9 +64,9 @@ def train():
         logger.info('Loaded dataset from dataset.pkl!')
     except Exception:
         logger.debug('Loading train dataset.')
-        train_data = Dataset(train_path, photo_json, photo_path, word_dict, config)
+        train_data = Dataset(train_path, photo_json, photo_path, w2v, config)
         logger.debug('Loading valid dataset.')
-        valid_data = Dataset(valid_path, photo_json, photo_path, word_dict, config)
+        valid_data = Dataset(valid_path, photo_json, photo_path, w2v, config)
         pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
 
     train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True, num_workers=2,
@@ -71,13 +74,13 @@ def train():
     valid_dlr = DataLoader(valid_data, batch_size=config.batch_size, collate_fn=lambda x: batch_loader(x))
 
     # model = UMPR(config, word_emb).to(config.device)
-    model = torch.nn.DataParallel(UMPR(config, word_emb)).to(config.device)
+    model = torch.nn.DataParallel(UMPR(config, w2v.embedding)).to(config.device)
     training(train_dlr, valid_dlr, model, config, config.model_path)
 
 
 def test():
     logger.debug('Loading test dataset.')
-    test_data = Dataset(test_path, photo_json, photo_path, word_dict, config)
+    test_data = Dataset(test_path, photo_json, photo_path, w2v, config)
     test_dlr = DataLoader(test_data, batch_size=config.batch_size * 2, collate_fn=lambda x: batch_loader(x))
     logger.info('Start to test.')
     model = torch.load(config.model_path)
@@ -109,7 +112,7 @@ if __name__ == '__main__':
     logger.info(f'Test  file {test_path}\n')
 
     logger.debug('Load word embedding...')
-    word_emb, word_dict = load_embedding(config.word2vec_file)
+    w2v = Word2vec(config.word2vec_file)
 
     train()
     test()
