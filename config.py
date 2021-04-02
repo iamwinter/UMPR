@@ -10,7 +10,7 @@ class Config:
     batch_size = 32
     learning_rate = 1e-5
     l2_regularization = 1e-3
-    learning_rate_decay = 0.99
+    lr_decay = 0.99
 
     word2vec_file = 'embedding/glove.6B.50d.txt'
     data_dir = 'data/music'

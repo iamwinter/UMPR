@@ -19,7 +19,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
     start_time = time.perf_counter()
 
     opt = torch.optim.Adam(model.parameters(), config.learning_rate, weight_decay=config.l2_regularization)
-    lr_sch = torch.optim.lr_scheduler.ExponentialLR(opt, config.learning_rate_decay)
+    lr_sch = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
 
     best_loss, batch_counter = 100, 0
     for epoch in range(config.train_epochs):
@@ -69,7 +69,7 @@ def train():
         valid_data = Dataset(valid_path, photo_json, photo_path, w2v, config)
         pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
 
-    train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True, num_workers=2,
+    train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
                            collate_fn=lambda x: batch_loader(x))
     valid_dlr = DataLoader(valid_data, batch_size=config.batch_size, collate_fn=lambda x: batch_loader(x))
 

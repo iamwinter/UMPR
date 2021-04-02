@@ -96,8 +96,8 @@ def train_ABAE(word2vec, train_data, args, model_path, logger=get_logger()):
     train_dlr = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
 
     model = ABAE(word2vec.embedding, args.aspect_size, args.l2_regularization).to(args.device)
-    opt = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.l2_regularization)
-    lr_sch = torch.optim.lr_scheduler.ExponentialLR(opt, args.learning_rate_decay)
+    opt = torch.optim.Adam(model.parameters(), args.learning_rate)
+    lr_sch = torch.optim.lr_scheduler.ExponentialLR(opt, args.lr_decay)
 
     logger.info('Start to train.')
     for epoch in range(args.train_epochs):
@@ -163,7 +163,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=1024, help='input batch size for training (default: 64)')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate (default: 0.001)')
     parser.add_argument('--l2_regularization', type=float, default=0.1)
-    parser.add_argument('--learning_rate_decay', type=float, default=0.99)
+    parser.add_argument('--lr_decay', type=float, default=0.99)
     parser.add_argument('--train_w2v', type=bool, default=False, help='train word2vec by gensim')
     parser.add_argument('--vocab_size', type=int, default=9000, help='max size of vocab')
     parser.add_argument('--max_length', type=int, default=15, help='max length of sentence')
