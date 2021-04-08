@@ -61,7 +61,7 @@ UMPR
 
 3. Training Strategy (optional step)
 
-    [Here](./pretrain/README.md)
+    [Here](./pretrain)
 
 4. Train and evaluate the model. All of parameters are defined in `config.py`. 
     ```shell script
