@@ -17,6 +17,7 @@ class Word2vec:
             self._from_gensim(emb_path, vocab_size)
         for i in range(3):
             self.embedding[i] = numpy.zeros_like(self.embedding[3])
+        self.word_dim = len(self.embedding[0])
 
     def sent2indices(self, sentence, align_length=0):
         indices = list()
@@ -32,6 +33,12 @@ class Word2vec:
         if 0 < align_length and len(indices) < align_length:
             indices += [self.word2index[self.padding]] * (align_length - len(indices))
         return indices
+
+    def pad(self, sequence, pad_length):
+        if len(sequence) < pad_length:
+            return sequence + [self.word2index[self.padding]] * (pad_length - len(sequence))
+        else:
+            return sequence[:pad_length]
 
     def _from_glove(self, emb_path):
         with open(emb_path, encoding='utf-8') as f:

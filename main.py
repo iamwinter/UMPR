@@ -50,7 +50,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
         lr_sch.step()
         train_loss = total_loss / total_samples
         logger.info(f"Epoch {epoch:3d}; train loss {train_loss:.6f}")
-        if batch_counter > 20000:
+        if batch_counter > 50000:
             break
 
     end_time = time.perf_counter()

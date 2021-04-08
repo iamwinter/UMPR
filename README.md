@@ -45,34 +45,39 @@ UMPR
 
 1. Execute `data_process.py` to generate 
 `train.csv`,`valid.csv`,`test.csv`,`photos.json`.
-```shell script
-python data/data_process.py --data_type amazon \
-    --data_path ./data/music/reviews_Digital_Music.json.gz \
-    --meta_path ./data/music/meta_Digital_Music.json.gz \
-    --save_dir ./data/music \
-    --train_rate 0.8
-```
+    ```shell script
+    python data/data_process.py --data_type amazon \
+        --data_path ./data/music/reviews_Digital_Music.json.gz \
+        --meta_path ./data/music/meta_Digital_Music.json.gz \
+        --save_dir ./data/music \
+        --train_rate 0.8
+    ```
 
 2. For amazon(**not yelp**), execute `down_photos.py` to download `photos/*.jpg`.
-```shell script
-python data/down_photos.py --photos_json ./data/music/photos.json
-```
 
-3. Train and evaluate the model. All of parameters are defined in `config.py`. 
-```shell script
-python main.py --data_dir ./data/music --view_size 1
-```
-```shell script
-python main.py --data_dir ./data/yelp --view_size 5
-```
+    ```shell script
+    python data/down_photos.py --photos_json ./data/music/photos.json
+    ```
 
-4. Test only:
-```shell script
-python test.py --data_dir ./data/music --view_size 1 --model_path ./model/default.pt
-```
-```shell script
-python test.py --data_dir ./data/yelp --view_size 5 --model_path ./model/default.pt
-```
+3. Training Strategy (optional step)
+
+    [Here](./pretrain/README.md)
+
+4. Train and evaluate the model. All of parameters are defined in `config.py`. 
+    ```shell script
+    python main.py --data_dir ./data/music --view_size 1
+    ```
+    ```shell script
+    python main.py --data_dir ./data/yelp --view_size 5
+    ```
+
+5. Test only:
+    ```shell script
+    python test.py --data_dir ./data/music --view_size 1 --model_path ./model/default.pt
+    ```
+    ```shell script
+    python test.py --data_dir ./data/yelp --view_size 5 --model_path ./model/default.pt
+    ```
 
 # Experiment
 
@@ -105,6 +110,11 @@ Performance comparison (mean squared error) on several datasets.
         <td>Amazon Music (836,006)</td>
         <td>0.875224</td>
         <td>0.825261</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td>0.955383</td>
     </tr>
     <tr>
         <td>Amazon Clothing, Shoes and Jewelry (5,748,920)</td>

@@ -8,7 +8,7 @@ class Config:
     # device = torch.device("cpu")
     train_epochs = 20
     batch_size = 32
-    learning_rate = 1e-5
+    learning_rate = 1e-6
     l2_regularization = 1e-3
     lr_decay = 0.99
 
