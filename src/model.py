@@ -234,14 +234,21 @@ class UMPR(nn.Module):
         self.embedding = nn.Embedding.from_pretrained(torch.Tensor(word_emb))
 
         self.review_net = ReviewNet(self.embedding.embedding_dim, config.gru_size, config.self_atte_size)
-        self.control_net = ControlNet(self.embedding.embedding_dim, config.gru_size, config.kernel_count,
-                                      config.kernel_size, config.view_size, config.threshold, config.self_atte_size)
-        self.visual_net = VisualNet(config.view_size)
 
-        self.linear_fusion = nn.Sequential(
-            nn.Linear(config.gru_size * 2 + config.view_size + config.view_size, 1),
-            nn.ReLU()
-        )
+        if config.review_net_only:
+            self.review_net_linear = nn.Sequential(
+                nn.Linear(config.gru_size * 2, 1),
+                nn.ReLU()
+            )
+        else:
+            self.control_net = ControlNet(self.embedding.embedding_dim, config.gru_size, config.kernel_count,
+                                          config.kernel_size, config.view_size, config.threshold, config.self_atte_size)
+            self.visual_net = VisualNet(config.view_size)
+
+            self.linear_fusion = nn.Sequential(
+                nn.Linear(config.gru_size * 2 + config.view_size + config.view_size, 1),
+                nn.ReLU()
+            )
 
     def forward(self, user_reviews, item_reviews, ui_reviews, u_lengths, i_lengths, ui_lengths, photos, labels):
         device = self.embedding.weight.device
@@ -253,12 +260,15 @@ class UMPR(nn.Module):
         ui_emb = self.embedding(ui_reviews)
 
         review_net_repr = self.review_net(user_emb, item_emb, u_lengths, i_lengths)  # (batch, 2u) where u is GRU hidden
-        c_u, c_i, prefer_pos, prefer_neg = self.control_net(user_emb, item_emb, ui_emb, u_lengths, i_lengths,
-                                                            ui_lengths)
-        pos_match, neg_match, final_pos, final_neg = self.visual_net(photos, c_u, c_i)  # (b,view_size)
+        if hasattr(self, 'review_net_linear'):
+            prediction = self.review_net_linear(review_net_repr).squeeze(-1)
+            loss = torch.nn.functional.mse_loss(prediction, labels, reduction='mean')
+        else:
+            c_u, c_i, prefer_pos, prefer_neg = self.control_net(user_emb, item_emb, ui_emb, u_lengths, i_lengths, ui_lengths)
+            pos_match, neg_match, final_pos, final_neg = self.visual_net(photos, c_u, c_i)  # (b,view_size)
 
-        prediction = self.linear_fusion(torch.cat([review_net_repr, final_pos, final_neg], dim=-1)).squeeze(-1)
-        loss_v = torch.mean(prefer_pos.transpose(-1, -2) @ pos_match + prefer_neg.transpose(-1, -2) @ neg_match)  # eq20
-        loss_r = torch.nn.functional.mse_loss(prediction, labels, reduction='mean')
-        loss = loss_r + loss_v * self.loss_v_rate
+            prediction = self.linear_fusion(torch.cat([review_net_repr, final_pos, final_neg], dim=-1)).squeeze(-1)
+            loss_r = torch.nn.functional.mse_loss(prediction, labels, reduction='mean')
+            loss_v = torch.mean(prefer_pos.transpose(-1, -2) @ pos_match + prefer_neg.transpose(-1, -2) @ neg_match)
+            loss = loss_r + loss_v * self.loss_v_rate
         return prediction, loss

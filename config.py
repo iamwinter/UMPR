@@ -17,6 +17,8 @@ class Config:
     log_path = 'log/default.txt'
     model_path = 'model/default.pt'
 
+    review_net_only = True  # If it's true, only review net will be executable.
+
     sent_count = 20  # number of sentence per user/item
     lowest_sent_count = 5
     ui_sent_count = 5  # number of sentence in a review that u to i

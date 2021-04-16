@@ -1,8 +1,9 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
+import cv2
 import numpy
 import pandas as pd
 import torch
-from PIL import Image
 
 from src.helpers import process_bar
 
@@ -17,10 +18,10 @@ class Dataset(torch.utils.data.Dataset):
 
         df = pd.read_csv(data_path)
         df = df[df['review'].apply(lambda x: len(str(x))) > 5]
-        df['numbered_r'], self.sent_pool = self._get_sentence_pool(df, word2vec)
         self.retain_idx = [True] * df.shape[0]
         photos_name = self._get_photos_name(photo_json, photo_dir, df['itemID'], config.view_size)
-        user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u for i).
+        df['numbered_r'], self.sent_pool = self._get_sentence_pool(df, word2vec)
+        user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u to i).
         item_reviews = self._get_reviews(df, 'item_num', 'user_num')
         ui_reviews = self._get_ui_review(df)
 
@@ -95,7 +96,7 @@ class Dataset(torch.utils.data.Dataset):
         photos_by_item = dict(list(photo_df[['photo_id', 'label']].groupby(photo_df['business_id'])))  # iid: df
         photos_name = []
         for idx, iid in enumerate(item_id_list):
-            process_bar(idx + 1, len(item_id_list), prefix=f'Loading photos')
+            process_bar(idx + 1, len(item_id_list), prefix=f'Loading photos\' path')
             if not self.retain_idx[idx]:
                 photos_name.append(None)
                 continue
@@ -129,21 +130,29 @@ def pad_reviews(reviews, max_count=None, max_len=None, pad=0):
 
 def get_image(path, resize):
     try:
-        image = Image.open(path).convert('RGB').resize(resize)
-        image = numpy.asarray(image) / 255
-        return image.transpose((2, 0, 1))
+        image = cv2.imread(path)
+        image = cv2.resize(image, resize)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = image.transpose((2, 0, 1))
+        image = image / 255.0
+        return image
     except Exception:
         return numpy.zeros([3] + list(resize))  # default
 
 
-def batch_loader(batch_list, photo_size=(224, 224), pad=0):
+def batch_loader(batch_list, load_photo=True, photo_size=(224, 224), pad=0):
+    # load all of photos using thread pool.
+    photo_paths = [path for sample in batch_list for view in sample[3] for path in view]
+    pool = ThreadPoolExecutor(max_workers=64)
+    results = pool.map(lambda x: get_image(x, photo_size), photo_paths)
+
     data = [list() for i in batch_list[0]]
     for sample in batch_list:
         for i, val in enumerate(sample):
             if i in (0, 1, 2):  # reviews val=[sent_id1, sent_id2, ...]
                 data[i].append(val)
-            if i == 3:  # photos
-                data[i].append([[get_image(path, photo_size) for path in ps] for ps in val])
+            if i == 3 and load_photo:  # photos
+                data[i].append([[next(results) for path in ps] for ps in val])
             if i == 4:  # ratings
                 data[i].append(val)
 

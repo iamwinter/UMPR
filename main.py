@@ -39,7 +39,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
             batch_counter += 1
             if batch_counter % 500 == 0 or batch_counter % 500 > 100 and i + 1 == len(train_dataloader):
                 valid_mse = predict_mse(model, valid_dataloader)
-                logger.info(f'## Evaluate model on validation and loss is {valid_mse:.6f}')
+                logger.info(f'Epoch {epoch:3d}; Evaluate model on validation and loss is {valid_mse:.6f}')
                 if best_loss > valid_mse:
                     if hasattr(model, 'module'):
                         torch.save(model.module, model_path)
@@ -70,10 +70,11 @@ def train():
         pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
 
     train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
-                           collate_fn=lambda x: batch_loader(x))
-    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size, collate_fn=lambda x: batch_loader(x))
+                           collate_fn=lambda x: batch_loader(x, not config.review_net_only))
+    valid_dlr = DataLoader(valid_data, batch_size=config.batch_size,
+                           collate_fn=lambda x: batch_loader(x, not config.review_net_only))
 
-    # model = UMPR(config, word_emb).to(config.device)
+    # model = UMPR(config, w2v.embedding).to(config.device)
     model = torch.nn.DataParallel(UMPR(config, w2v.embedding)).to(config.device)
     training(train_dlr, valid_dlr, model, config, config.model_path)
 
@@ -81,7 +82,8 @@ def train():
 def test():
     logger.debug('Loading test dataset.')
     test_data = Dataset(test_path, photo_json, photo_path, w2v, config)
-    test_dlr = DataLoader(test_data, batch_size=config.batch_size * 2, collate_fn=lambda x: batch_loader(x))
+    test_dlr = DataLoader(test_data, batch_size=config.batch_size * 2,
+                          collate_fn=lambda x: batch_loader(x, not config.review_net_only))
     logger.info('Start to test.')
     model = torch.load(config.model_path)
     test_loss = predict_mse(model, test_dlr)
@@ -91,8 +93,9 @@ def test():
 if __name__ == '__main__':
     config = Config()
 
-    config.log_path = f'./log/{os.path.basename(config.data_dir.strip("/"))}{date("%Y%m%d_%H%M%S")}.txt'
-    config.model_path = f'./model/{os.path.basename(config.data_dir.strip("/"))}{date("%Y%m%d_%H%M%S")}.pt'
+    dirname = os.path.basename(config.data_dir.strip("/"))
+    config.log_path = f'./log/{dirname}{date("%Y%m%d_%H%M%S")}.txt'
+    config.model_path = f'./model/{dirname}{"_review_net" if config.review_net_only else ""}{date("%Y%m%d_%H%M%S")}.pt'
     photo_path = os.path.join(config.data_dir, 'photos')
     photo_json = os.path.join(config.data_dir, 'photos.json')
     train_path = os.path.join(config.data_dir, 'train.csv')

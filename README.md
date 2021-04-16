@@ -113,7 +113,7 @@ Performance comparison (mean squared error) on several datasets.
         <td>-</td>
         <td>-</td>
         <td>-</td>
-        <td>-</td>
+        <td>1.139187</td>
         <td>0.955383</td>
     </tr>
     <tr>
