@@ -148,3 +148,10 @@ UMPR
       UserWarning: Was asked to gather along dimension 0, but all input tensors were scalars; will instead unsqueeze and return a vector.`
       原因是网络的输出`loss`是个标量，多个GPU输出的`loss`合并时，只能将这些标量合并为向量。  
       解决：我删掉了源码中这句警告语句。
+
++ 2021.04.17
+
+    - 运行代码时，参数如果是bool型，不管传什么，都会被解析为`True`。
+      例如，`python main.py --test_only False`，则实际执行的值为`True`。  
+      分析：貌似是命令行按字符串类型接受参数值，而字符串默认作为`true`。
+      解决：有待解决。
