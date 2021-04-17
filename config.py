@@ -18,7 +18,7 @@ class Config:
     model_path = ''
 
     test_only = False  # If it's true, you must set log_path and model_path.
-    review_net_only = True  # If it's true, only review net will be executable.
+    review_net_only = False  # If it's true, only review net will be executable.
 
     sent_count = 20  # number of sentence per user/item
     lowest_sent_count = 5
