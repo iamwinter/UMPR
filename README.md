@@ -153,5 +153,6 @@ UMPR
 
     - 运行代码时，参数如果是bool型，不管传什么，都会被解析为`True`。
       例如，`python main.py --test_only False`，则实际执行的值为`True`。  
-      分析：貌似是命令行按字符串类型接受参数值，而字符串默认作为`true`。
-      解决：有待解决。
+      分析：貌似是命令行按字符串类型接受参数值，而字符串默认作为`true`。  
+      解决：对于bool类型的超参数，
+      指定`parser.add_argument()`的参数`type=ast.literal_eval`，比`eval`安全。

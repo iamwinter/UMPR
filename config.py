@@ -1,3 +1,4 @@
+import ast
 import inspect
 import argparse
 import torch
@@ -40,7 +41,10 @@ class Config:
 
         parser = argparse.ArgumentParser()
         for key, val in attributes:
-            parser.add_argument('--' + key, dest=key, type=type(val), default=val)
+            receive_type = type(val)
+            if receive_type is bool:
+                receive_type = ast.literal_eval
+            parser.add_argument('--' + key, dest=key, type=receive_type, default=val)
         for key, val in parser.parse_args().__dict__.items():
             self.__setattr__(key, val)
 
