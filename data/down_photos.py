@@ -37,7 +37,7 @@ def download_photo(url, path):
     return False, url, path
 
 
-def download_photos(meta_path, max_workers=256):
+def download_photos(meta_path):
     data_dir = os.path.dirname(meta_path)
     photo_dir = os.path.join(data_dir, 'photos')
     os.makedirs(photo_dir, exist_ok=True)
@@ -50,7 +50,7 @@ def download_photos(meta_path, max_workers=256):
         return
 
     print(f'## Start to download pictures and save them into {photo_dir}')
-    pool = ThreadPoolExecutor(max_workers=max_workers)
+    pool = ThreadPoolExecutor()
     tasks = []
     for name, url in zip(df['photo_id'], df['imUrl']):
         path = os.path.join(photo_dir, name + '.jpg')
@@ -64,6 +64,7 @@ def download_photos(meta_path, max_workers=256):
         if not res:
             failed.append((url, path))
         print(f'## Tried {i}/{len(tasks)} photos!', end='\r', flush=True)
+    pool.shutdown()
 
     for url, path in failed:
         print(f'## Failed to download {url} to {path}')

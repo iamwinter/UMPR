@@ -1,4 +1,5 @@
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy
@@ -143,8 +144,9 @@ def get_image(path, resize):
 def batch_loader(batch_list, load_photo=True, photo_size=(224, 224), pad=0):
     # load all of photos using thread pool.
     photo_paths = [path for sample in batch_list for view in sample[3] for path in view]
-    pool = ThreadPoolExecutor(max_workers=64)
+    pool = ThreadPoolExecutor()
     results = pool.map(lambda x: get_image(x, photo_size), photo_paths)
+    pool.shutdown()
 
     data = [list() for i in batch_list[0]]
     for sample in batch_list:
