@@ -73,12 +73,11 @@ UMPR
     python main.py --data_dir ./data/yelp --view_size 5
     ```
 
-5. Test only:
+    Example of test only:
     ```shell script
-    python test.py --data_dir ./data/music --view_size 1 --model_path ./model/default.pt
-    ```
-    ```shell script
-    python test.py --data_dir ./data/yelp --view_size 5 --model_path ./model/default.pt
+    python main.py --data_dir ./data/music --view_size 1 \
+        --test_only True \
+        --model_path ./model/your_trained_model_name.pt
     ```
 
 # Experiment
@@ -89,7 +88,7 @@ UMPR
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | Amazon Music small (64,706) | 0.900899 | 0.822472 | --- | --- | --- | 1.117017 | 0.925538 |
 | Amazon Music (836,006)      | 0.875224 | 0.825261 | --- | --- | --- | 1.139187 | 0.955383 |
-| Amazon Clothing, Shoes and Jewelry (5,748,920) | 1.512551 | 1.502135 | --- | --- | --- | - | - |
+| Amazon Clothing, Shoes and Jewelry (5,748,920) | 1.512551 | 1.502135 | --- | --- | --- | 1.306969 | - |
 | Yelp (8,021,121)            | 2.171064 | 2.041674 | --- | --- | --- | - | - |
 
 </div>
@@ -109,7 +108,7 @@ UMPR
 
 **DeepCoNN**: [Details](https://github.com/iamwinter/DeepCoNN)
 
-**UMPR-R**: only review network part of UMPR.
+**UMPR-R**: Only review network part of UMPR. i.e. set `review_net_only=True` in `config.py`.
 
 **UMPR**: Our complete model.
 

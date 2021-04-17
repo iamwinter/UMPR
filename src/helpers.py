@@ -8,7 +8,7 @@ def get_logger(log_file=None, file_level=logging.INFO, stdout_level=logging.DEBU
     formatter = logging.Formatter('%(asctime)s %(levelname)5s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     _logger = logging.getLogger(logger_name)
 
-    if log_file is not None:
+    if log_file is not None and len(log_file) > 0:
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(level=file_level)
         file_handler.setFormatter(formatter)

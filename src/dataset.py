@@ -1,5 +1,5 @@
 import os
-import threading
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy
@@ -94,27 +94,35 @@ class Dataset(torch.utils.data.Dataset):
             photo_df['label'] = self.labels[0]  # Due to amazon have no label.
         assert len(self.labels) == view_size, f'By "{photos_json}", Config().view_size must be {len(self.labels)}!'
 
-        photos_by_item = dict(list(photo_df[['photo_id', 'label']].groupby(photo_df['business_id'])))  # iid: df
-        photos_name = []
-        for idx, iid in enumerate(item_id_list):
+        photo_groups = defaultdict(dict)
+        for idx, row in enumerate(photo_df.itertuples()):
+            process_bar(idx + 1, len(photo_df), prefix=f'Reading photos\' DataFrame')
+            bid = getattr(row, 'business_id')
+            pid = getattr(row, 'photo_id')
+            label = getattr(row, 'label')
+            if label not in photo_groups[bid]:
+                photo_groups[bid][label] = list()
+            photo_groups[bid][label].append(pid)
+
+        photos_paths = []
+        for idx, bid in enumerate(item_id_list):
             process_bar(idx + 1, len(item_id_list), prefix=f'Loading photos\' path')
             if not self.retain_idx[idx]:
-                photos_name.append(None)
+                photos_paths.append(None)
                 continue
-            item_df = photos_by_item.get(iid, pd.DataFrame(columns=['photo_id', 'label']))  # all photos of this item.
-            pid_by_label = dict(list(item_df['photo_id'].groupby(item_df['label'])))
             item_photos = list()
-            for label in self.labels:
-                pids = pid_by_label.get(label, pd.Series(dtype=str)).to_list()
-                if len(pids) < 1:
+            for label in self.labels:  # Each view
+                pids = photo_groups[bid].get(label, list())
+                if len(pids) < 1:  # Too few photos of this view
                     self.retain_idx[idx] = False
                     item_photos = None
                     break
-                pids = pids[:self.photo_count] + ['unknown'] * (self.photo_count - len(pids))
-                pids = [os.path.join(photo_dir, name + '.jpg') for name in pids]
+                pids = [os.path.join(photo_dir, pids[j] + '.jpg') for j in range(0, min(len(pids), self.photo_count))]
+                if len(pids) < self.photo_count:  # Insufficient length
+                    pids.extend(['unknown'] * (self.photo_count - len(pids)))
                 item_photos.append(pids)
-            photos_name.append(item_photos)
-        return photos_name  # shape(sample_count,view_count,photo_count)
+            photos_paths.append(item_photos)
+        return photos_paths  # shape(sample_count,view_count,photo_count)
 
 
 def pad_reviews(reviews, max_count=None, max_len=None, pad=0):
@@ -141,7 +149,7 @@ def get_image(path, resize):
         return numpy.zeros([3] + list(resize))  # default
 
 
-def batch_loader(batch_list, load_photo=True, photo_size=(224, 224), pad=0):
+def batch_loader(batch_list, ignore_photos=False, photo_size=(224, 224), pad=0):
     # load all of photos using thread pool.
     photo_paths = [path for sample in batch_list for view in sample[3] for path in view]
     pool = ThreadPoolExecutor()
@@ -153,7 +161,7 @@ def batch_loader(batch_list, load_photo=True, photo_size=(224, 224), pad=0):
         for i, val in enumerate(sample):
             if i in (0, 1, 2):  # reviews val=[sent_id1, sent_id2, ...]
                 data[i].append(val)
-            if i == 3 and load_photo:  # photos
+            if not ignore_photos and i == 3:  # photos
                 data[i].append([[next(results) for path in ps] for ps in val])
             if i == 4:  # ratings
                 data[i].append(val)

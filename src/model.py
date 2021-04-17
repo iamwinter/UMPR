@@ -230,13 +230,14 @@ class VisualNet(nn.Module):
 class UMPR(nn.Module):
     def __init__(self, config, word_emb):
         super().__init__()
+        self.review_net_only = config.review_net_only
         self.loss_v_rate = config.loss_v_rate
         self.embedding = nn.Embedding.from_pretrained(torch.Tensor(word_emb))
 
         self.review_net = ReviewNet(self.embedding.embedding_dim, config.gru_size, config.self_atte_size)
 
         if config.review_net_only:
-            self.review_net_linear = nn.Sequential(
+            self.linear_fusion = nn.Sequential(
                 nn.Linear(config.gru_size * 2, 1),
                 nn.ReLU()
             )
@@ -260,8 +261,8 @@ class UMPR(nn.Module):
         ui_emb = self.embedding(ui_reviews)
 
         review_net_repr = self.review_net(user_emb, item_emb, u_lengths, i_lengths)  # (batch, 2u) where u is GRU hidden
-        if hasattr(self, 'review_net_linear'):
-            prediction = self.review_net_linear(review_net_repr).squeeze(-1)
+        if self.review_net_only:
+            prediction = self.linear_fusion(review_net_repr).squeeze(-1)
             loss = torch.nn.functional.mse_loss(prediction, labels, reduction='mean')
         else:
             c_u, c_i, prefer_pos, prefer_neg = self.control_net(user_emb, item_emb, ui_emb, u_lengths, i_lengths, ui_lengths)

@@ -39,7 +39,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
             batch_counter += 1
             if batch_counter % 500 == 0 or batch_counter % 500 > 100 and i + 1 == len(train_dataloader):
                 valid_mse = predict_mse(model, valid_dataloader)
-                logger.info(f'Epoch {epoch:3d}; Evaluate model on validation and loss is {valid_mse:.6f}')
+                logger.info(f'Epoch {epoch:3d}; train loss {total_loss / total_samples:.6f}; valid mse {valid_mse:.6f}')
                 if best_loss > valid_mse:
                     if hasattr(model, 'module'):
                         torch.save(model.module, model_path)
@@ -48,8 +48,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
                     best_loss = valid_mse
 
         lr_sch.step()
-        train_loss = total_loss / total_samples
-        logger.info(f"Epoch {epoch:3d}; train loss {train_loss:.6f}")
+        logger.info(f"Epoch {epoch:3d} done; train loss {total_loss / total_samples:.6f}")
         if batch_counter > 50000:
             break
 
@@ -70,9 +69,9 @@ def train():
         pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
 
     train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
-                           collate_fn=lambda x: batch_loader(x, not config.review_net_only))
+                           collate_fn=lambda x: batch_loader(x, config.review_net_only))
     valid_dlr = DataLoader(valid_data, batch_size=config.batch_size,
-                           collate_fn=lambda x: batch_loader(x, not config.review_net_only))
+                           collate_fn=lambda x: batch_loader(x, config.review_net_only))
 
     # model = UMPR(config, w2v.embedding).to(config.device)
     model = torch.nn.DataParallel(UMPR(config, w2v.embedding)).to(config.device)
@@ -83,7 +82,7 @@ def test():
     logger.debug('Loading test dataset.')
     test_data = Dataset(test_path, photo_json, photo_path, w2v, config)
     test_dlr = DataLoader(test_data, batch_size=config.batch_size * 2,
-                          collate_fn=lambda x: batch_loader(x, not config.review_net_only))
+                          collate_fn=lambda x: batch_loader(x, config.review_net_only))
     logger.info('Start to test.')
     model = torch.load(config.model_path)
     test_loss = predict_mse(model, test_dlr)
@@ -93,16 +92,22 @@ def test():
 if __name__ == '__main__':
     config = Config()
 
-    dirname = os.path.basename(config.data_dir.strip("/"))
-    config.log_path = f'./log/{dirname}{date("%Y%m%d_%H%M%S")}.txt'
-    config.model_path = f'./model/{dirname}{"_review_net" if config.review_net_only else ""}{date("%Y%m%d_%H%M%S")}.pt'
+    if config.test_only:
+        if not os.path.exists(config.model_path):
+            print(f'{config.model_path} is not exist! Please train first (set test_only=False in config.py)!')
+            exit(-1)
+    else:
+        dirname = os.path.basename(config.data_dir.strip("/"))
+        config.log_path = f'./log/{dirname}{date("%Y%m%d_%H%M%S")}.txt'
+        config.model_path = f'./model/{dirname}' \
+                            f'{"_review_net" if config.review_net_only else ""}{date("%Y%m%d_%H%M%S")}.pt'
+        os.makedirs(os.path.dirname(config.log_path), exist_ok=True)
+        os.makedirs(os.path.dirname(config.model_path), exist_ok=True)
     photo_path = os.path.join(config.data_dir, 'photos')
     photo_json = os.path.join(config.data_dir, 'photos.json')
     train_path = os.path.join(config.data_dir, 'train.csv')
     valid_path = os.path.join(config.data_dir, 'valid.csv')
     test_path = os.path.join(config.data_dir, 'test.csv')
-    os.makedirs(os.path.dirname(config.log_path), exist_ok=True)
-    os.makedirs(os.path.dirname(config.model_path), exist_ok=True)
 
     logger = get_logger(config.log_path)
     logger.info(config)
@@ -117,5 +122,6 @@ if __name__ == '__main__':
     logger.debug('Load word embedding...')
     w2v = Word2vec(config.word2vec_file)
 
-    train()
+    if not config.test_only:
+        train()
     test()
