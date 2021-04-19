@@ -42,7 +42,7 @@ class Config:
         parser = argparse.ArgumentParser()
         for key, val in attributes:
             receive_type = type(val)
-            if receive_type is bool:
+            if receive_type in [bool, int, float]:
                 receive_type = ast.literal_eval
             parser.add_argument('--' + key, dest=key, type=receive_type, default=val)
         for key, val in parser.parse_args().__dict__.items():

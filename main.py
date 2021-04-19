@@ -37,7 +37,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
             total_samples += len(pred)
 
             batch_counter += 1
-            if batch_counter % 500 == 0 or batch_counter % 500 > 100 and i + 1 == len(train_dataloader):
+            if batch_counter % 500 == 0:
                 valid_mse = predict_mse(model, valid_dataloader)
                 logger.info(f'Epoch {epoch:3d}; train loss {total_loss / total_samples:.6f}; valid mse {valid_mse:.6f}')
                 if best_loss > valid_mse:
