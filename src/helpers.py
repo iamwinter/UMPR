@@ -23,11 +23,3 @@ def get_logger(log_file=None, file_level=logging.INFO, stdout_level=logging.DEBU
 
 def date(f='%Y-%m-%d %H:%M:%S'):
     return time.strftime(f, time.localtime())
-
-
-def process_bar(current, total, prefix='', auto_rm=True):
-    bar = '=' * int(current / total * 50)
-    bar = f' {prefix} |{bar.ljust(50)}| ({current}/{total}) {current / total:.1%} | '
-    print(bar, end='\r', flush=True)
-    if auto_rm and current == total:
-        print(end=('\r' + ' ' * len(bar) + '\r'), flush=True)

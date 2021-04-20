@@ -9,9 +9,10 @@ import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 sys.path.append('../')
-from src.helpers import get_logger, process_bar
+from src.helpers import get_logger
 from src.model import RNet
 from src.word2vec import Word2vec
 from pretrain.abae import ABAEDataset, train_ABAE, ABAE
@@ -126,8 +127,7 @@ def pretrain_r_net(word2vec, train_dataset, trained_abae, save_r_net_path, args)
     for epoch in range(args.train_epochs):
         pretrain_r.train()
         total_loss, total_samples = 0, 0
-        for i, batch in enumerate(train_dlr):
-            process_bar(i + 1, len(train_dlr), prefix=f'pretraining for R-Net epoch {epoch}')
+        for batch in tqdm(train_dlr, desc=f'pretraining for R-Net epoch {epoch}'):
             _, loss = pretrain_r(*batch)
             loss = loss.mean()
             opt.zero_grad()

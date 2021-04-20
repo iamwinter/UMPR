@@ -8,9 +8,10 @@ import torch
 from sklearn.cluster import KMeans
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 sys.path.append('../')
-from src.helpers import get_logger, process_bar
+from src.helpers import get_logger
 from src.word2vec import Word2vec
 
 
@@ -122,8 +123,7 @@ def train_ABAE(word2vec, train_data, sent_len, neg_count, batch_size, aspect_siz
     for epoch in range(train_epochs):
         model.train()
         total_loss, total_samples = 0, 0
-        for i, batch in enumerate(train_dlr):
-            process_bar(i + 1, len(train_dlr), prefix=f'ABAE training epoch {epoch}')
+        for i, batch in tqdm(train_dlr, desc=f'ABAE training epoch {epoch}'):
             label_probs, loss = model(*batch)
             loss = loss.mean()
             opt.zero_grad()
@@ -179,8 +179,7 @@ def evaluate(model, word2vec, tests, test_labels, sent_len=20, batch_size=1024):
     correct, sample_count = 0, 0
     with torch.no_grad():
         model.eval()
-        for i, batch in enumerate(test_dlr):
-            process_bar(i + 1, len(test_dlr), prefix='Evaluate')
+        for batch in tqdm(test_dlr, desc='Evaluate'):
             probs = model(batch[0])
             pred = probs.max(dim=-1)[1]
             for truth, aid in zip(batch[-1], pred.cpu().numpy()):

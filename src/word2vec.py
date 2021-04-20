@@ -1,5 +1,6 @@
 import gensim
 import numpy
+from tqdm import tqdm
 
 
 class Word2vec:
@@ -42,7 +43,7 @@ class Word2vec:
 
     def _from_glove(self, emb_path):
         with open(emb_path, encoding='utf-8') as f:
-            for line in f.readlines():
+            for line in tqdm(f.readlines(), desc=f'Loading word2vec from {emb_path}'):
                 tokens = line.split()
                 self.vocab.append(tokens[0])
                 self.word2index[tokens[0]] = len(self.word2index)
@@ -52,8 +53,8 @@ class Word2vec:
         model = gensim.models.Word2Vec.load(emb_path)
         vocabs = model.wv.vocab.items()
         if vocab_size > 0:
-            vocabs = sorted(vocabs, key=lambda x: x[1].count, reverse=True)  # sort by frequency
-        for w, _ in vocabs:
+            vocabs = sorted(vocabs, key=lambda x: x[1].count, reverse=True)[:vocab_size]  # sort by frequency
+        for w, _ in tqdm(vocabs, desc=f'Loading word2vec from {emb_path}'):
             self.vocab.append(w)
             self.word2index[w] = len(self.word2index)
             self.embedding.append(model.wv[w])

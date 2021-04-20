@@ -3,18 +3,19 @@ import pickle
 import time
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from config import Config
 from src.dataset import Dataset, batch_loader
-from src.evaluate import predict_mse
-from src.helpers import process_bar, get_logger, date
+from src.evaluate import evaluate_mse
+from src.helpers import get_logger, date
 from src.word2vec import Word2vec
 from src.model import UMPR
 
 
 def training(train_dataloader, valid_dataloader, model, config, model_path):
     logger.info('Start to train!')
-    valid_mse = predict_mse(model, valid_dataloader)
+    valid_mse = evaluate_mse(model, valid_dataloader)
     logger.info(f'Initial validation mse is {valid_mse:.6f}')
     start_time = time.perf_counter()
 
@@ -24,8 +25,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
     best_loss, batch_counter = 100, 0
     for epoch in range(config.train_epochs):
         total_loss, total_samples = 0, 0
-        for i, batch in enumerate(train_dataloader):
-            process_bar(i + 1, len(train_dataloader), prefix=f'Training epoch {epoch}')
+        for batch in tqdm(train_dataloader, desc=f'Training epoch {epoch}', leave=False):
             model.train()
             pred, loss = model(*batch)
             loss = loss.mean()
@@ -38,7 +38,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
 
             batch_counter += 1
             if batch_counter % 500 == 0:
-                valid_mse = predict_mse(model, valid_dataloader)
+                valid_mse = evaluate_mse(model, valid_dataloader)
                 logger.info(f'Epoch {epoch:3d}; train loss {total_loss / total_samples:.6f}; valid mse {valid_mse:.6f}')
                 if best_loss > valid_mse:
                     if hasattr(model, 'module'):
@@ -68,6 +68,7 @@ def train():
         valid_data = Dataset(valid_path, photo_json, photo_path, w2v, config)
         pickle.dump([train_data, valid_data], open(config.data_dir + '/dataset.pkl', 'wb'))
 
+    logger.info(f'Training dataset contains {len(train_data.data[0])} samples.')
     train_dlr = DataLoader(train_data, batch_size=config.batch_size, shuffle=True,
                            collate_fn=lambda x: batch_loader(x, config.review_net_only))
     valid_dlr = DataLoader(valid_data, batch_size=config.batch_size,
@@ -85,7 +86,7 @@ def test():
                           collate_fn=lambda x: batch_loader(x, config.review_net_only))
     logger.info('Start to test.')
     model = torch.load(config.model_path)
-    test_loss = predict_mse(model, test_dlr)
+    test_loss = evaluate_mse(model, test_dlr)
     logger.info(f"Test end, test mse is {test_loss:.6f}")
 
 
@@ -118,7 +119,6 @@ if __name__ == '__main__':
     logger.info(f'Valid file {valid_path}')
     logger.info(f'Test  file {test_path}\n')
 
-    logger.debug('Load word embedding...')
     w2v = Word2vec(config.word2vec_file)
 
     if not config.test_only:

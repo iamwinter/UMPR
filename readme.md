@@ -70,7 +70,7 @@ UMPR
     python main.py --data_dir ./data/music --view_size 1
     ```
     ```shell script
-    python main.py --data_dir ./data/yelp --view_size 5
+    python main.py --data_dir ./data/yelp --view_size 5 --batch_size 32
     ```
 
     Example of test only:
