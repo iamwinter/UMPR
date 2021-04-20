@@ -17,10 +17,12 @@ class Dataset(torch.utils.data.Dataset):
         self.photo_count = config.photo_count
 
         df = pd.read_csv(data_path)
-        df = df[df['review'].apply(lambda x: len(str(x))) > 5]
+        df['review'] = df['review'].apply(
+            lambda x: [word2vec.sent2indices(sent)[:self.s_length] for sent in str(x).strip('. ').split('.')
+                       if len(sent) > 5])
+
         self.retain_idx = [True] * df.shape[0]
         photos_name = self._get_photos_name(photo_json, photo_dir, df['itemID'], config.view_size)
-        df['numbered_r'], self.sent_pool = self._get_sentence_pool(df, word2vec)
         user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u to i).
         item_reviews = self._get_reviews(df, 'item_num', 'user_num')
         ui_reviews = self._get_ui_review(df)
@@ -32,7 +34,6 @@ class Dataset(torch.utils.data.Dataset):
             [v for i, v in enumerate(photos_name) if self.retain_idx[i]],
             [v for i, v in enumerate(df['rating']) if self.retain_idx[i]],
         )
-        del self.retain_idx, self.sent_pool
 
     def __getitem__(self, idx):
         return tuple(x[idx] for x in self.data)
@@ -40,19 +41,8 @@ class Dataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data[0])
 
-    def _get_sentence_pool(self, df, w2v):
-        rev_sent_id = list()
-        sent_pool = [[0]]  # fill in with a null sentence
-        for review in tqdm(df['review'], desc='Loading sentences pool'):
-            sentences = [sent for sent in str(review).strip('. ').split('.') if len(sent) > 5]  # split review by "."
-            rev_sent_id.append(list(range(len(sent_pool), len(sent_pool) + len(sentences))))
-            for sent in sentences:
-                sent_nums = w2v.sent2indices(sent)[:self.s_length]  # cut sent
-                sent_pool.append(sent_nums)
-        return rev_sent_id, sent_pool
-
     def _get_reviews(self, df, lead='user_num', costar='item_num'):
-        reviews_by_lead = dict(list(df[[costar, 'numbered_r']].groupby(df[lead])))  # Information for every user/item
+        reviews_by_lead = dict(list(df[[costar, 'review']].groupby(df[lead])))  # Information for every user/item
         results = []
         with trange(len(df[lead]), desc=f'Loading sentences of {lead}') as t_bar:
             for i, (lead_id, costar_id) in enumerate(zip(df[lead], df[costar])):
@@ -61,46 +51,48 @@ class Dataset(torch.utils.data.Dataset):
                     results.append(None)
                     continue
                 df_data = reviews_by_lead[lead_id]  # get information of lead, return DataFrame.
-                reviews = df_data['numbered_r'][df_data[costar] != costar_id]  # get reviews without that u to i.
-                sentences = [self.sent_pool[sent_id] for r in reviews for sent_id in r]
+                reviews = df_data['review'][df_data[costar] != costar_id]  # get reviews without that u to i.
+                sentences = [sent for review in reviews for sent in review]
                 if len(sentences) < self.lowest_s_count:
                     self.retain_idx[i] = False
                     results.append(None)
                     continue
-                sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
-                sentences = sentences[:self.s_count]
+                if len(sentences) > self.s_count:
+                    sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
+                    sentences = sentences[:self.s_count]
                 results.append(sentences)
         return results  # shape(sample_count,sent_count)
 
     def _get_ui_review(self, df):
         reviews = list()
-        for i, sentences in tqdm(enumerate(df['numbered_r']), desc='Loading ui sentences', total=len(df['numbered_r'])):
+        for i, sentences in tqdm(enumerate(df['review']), desc='Loading ui sentences', total=len(df['review'])):
             if not self.retain_idx[i]:
                 reviews.append(None)
                 continue
-            sentences = [self.sent_pool[i] for i in sentences]
-            sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
-            sentences = sentences[:self.ui_s_count]
+            if len(sentences) > self.ui_s_count:
+                sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
+                sentences = sentences[:self.ui_s_count]
             reviews.append(sentences)
         return reviews
 
     def _get_photos_name(self, photos_json, photo_dir, item_id_list, view_size):
         photo_df = pd.read_json(photos_json, orient='records', lines=True)
         if 'yelp' in photo_dir:
-            self.labels = ['food', 'inside', 'outside', 'drink', 'menu']
+            self.views = ['food', 'inside', 'outside', 'drink']
         else:  # amazon
-            self.labels = ['unknown']
-            photo_df['label'] = self.labels[0]  # Due to amazon have no label.
-        assert len(self.labels) == view_size, f'By "{photos_json}", Config().view_size must be {len(self.labels)}!'
+            self.views = ['unknown']
+            photo_df['label'] = self.views[0]  # Due to amazon have no label.
+        assert len(self.views) == view_size, f'By "{photos_json}", Config().view_size must be {len(self.views)}!'
 
         photo_groups = defaultdict(dict)
         for row in tqdm(photo_df.itertuples(), desc='Reading photos\' DataFrame', total=len(photo_df)):
             bid = getattr(row, 'business_id')
             pid = getattr(row, 'photo_id')
             label = getattr(row, 'label')
-            if label not in photo_groups[bid]:
-                photo_groups[bid][label] = list()
-            photo_groups[bid][label].append(pid)
+            if label in self.views:
+                if label not in photo_groups[bid]:
+                    photo_groups[bid][label] = list()
+                photo_groups[bid][label].append(pid)
 
         photos_paths = []
         for idx, bid in tqdm(enumerate(item_id_list), desc='Loading photos\' path', total=len(item_id_list)):
@@ -108,7 +100,7 @@ class Dataset(torch.utils.data.Dataset):
                 photos_paths.append(None)
                 continue
             item_photos = list()
-            for label in self.labels:  # Each view
+            for label in self.views:  # Each view
                 pids = photo_groups[bid].get(label, list())
                 if len(pids) < 1:  # Too few photos of this view
                     self.retain_idx[idx] = False
