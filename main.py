@@ -97,10 +97,9 @@ if __name__ == '__main__':
             print(f'{config.model_path} is not exist! Please train first (set test_only=False in config.py)!')
             exit(-1)
     else:
-        dirname = os.path.basename(config.data_dir.strip("/"))
-        config.log_path = f'./log/{dirname}{date("%Y%m%d_%H%M%S")}.txt'
-        config.model_path = f'./model/{dirname}' \
-                            f'{"_review_net" if config.review_net_only else ""}{date("%Y%m%d_%H%M%S")}.pt'
+        save_name = os.path.basename(config.data_dir.strip("/")) + ('_review_net' if config.review_net_only else '')
+        config.log_path = f'./log/{save_name}{date("%Y%m%d_%H%M%S")}.txt'
+        config.model_path = f'./model/{save_name}{date("%Y%m%d_%H%M%S")}.pt'
         os.makedirs(os.path.dirname(config.log_path), exist_ok=True)
         os.makedirs(os.path.dirname(config.model_path), exist_ok=True)
     photo_path = os.path.join(config.data_dir, 'photos')
