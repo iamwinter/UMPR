@@ -22,7 +22,7 @@ class Word2vec:
 
     def sent2indices(self, sentence, align_length=0):
         indices = list()
-        for w in sentence.strip().split():
+        for w in sentence.replace('.', ' ').strip().split():
             if w.isdigit():
                 indices.append(self.word2index[self.number])
             elif w in self.word2index:
@@ -36,7 +36,9 @@ class Word2vec:
         return indices
 
     def pad(self, sequence, pad_length):
-        if len(sequence) < pad_length:
+        if len(sequence) == pad_length:
+            return sequence
+        elif len(sequence) < pad_length:
             return sequence + [self.word2index[self.padding]] * (pad_length - len(sequence))
         else:
             return sequence[:pad_length]

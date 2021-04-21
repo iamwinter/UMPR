@@ -66,17 +66,28 @@ UMPR
    [Click Here](./pretrain)
 
 4. **Train and evaluate the model**. All parameters are defined in `config.py`.
+
+   UMPR:
     ```shell script
-    python main.py --data_dir ./data/music --view_size 1
+    python main.py --data_dir ./data/music
     ```
     ```shell script
-    python main.py --data_dir ./data/yelp --view_size 4
+    python main.py --data_dir ./data/yelp --views ['food', 'inside', 'outside', 'drink']
     ```
 
-    Example of test only:
+    UMPR-R (only review_net work):
+    ```shell
+    python main.py --data_dir ./data/yelp --review_net_only True
+    ```
+
+    Test only:
     ```shell script
-    python main.py --data_dir ./data/music --view_size 1 \
-        --test_only True \
+    python main.py --data_dir ./data/music --test_only True \
+        --model_path ./model/your_trained_model_name.pt
+    ```
+    ```shell script
+    python main.py --data_dir ./data/yelp --test_only True \
+        --views ['food', 'inside', 'outside', 'drink'] \
         --model_path ./model/your_trained_model_name.pt
     ```
 
@@ -108,7 +119,7 @@ UMPR
 
 **DeepCoNN**: [Details](https://github.com/iamwinter/DeepCoNN)
 
-**UMPR-R**: Only review network part of UMPR. i.e. set `review_net_only=True` in `config.py`.
+**UMPR-R**: Only review network part of UMPR.
 
 **UMPR**: Our complete model.
 

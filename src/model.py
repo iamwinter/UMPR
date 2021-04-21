@@ -242,12 +242,13 @@ class UMPR(nn.Module):
                 nn.ReLU()
             )
         else:
+            view_size = len(config.views)
             self.control_net = ControlNet(self.embedding.embedding_dim, config.gru_size, config.kernel_count,
-                                          config.kernel_size, config.view_size, config.threshold, config.self_atte_size)
-            self.visual_net = VisualNet(config.view_size)
+                                          config.kernel_size, view_size, config.threshold, config.self_atte_size)
+            self.visual_net = VisualNet(view_size)
 
             self.linear_fusion = nn.Sequential(
-                nn.Linear(config.gru_size * 2 + config.view_size + config.view_size, 1),
+                nn.Linear(config.gru_size * 2 + view_size + view_size, 1),
                 nn.ReLU()
             )
 

@@ -39,7 +39,8 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
             batch_counter += 1
             if batch_counter % 500 == 0:
                 valid_mse = evaluate_mse(model, valid_dataloader)
-                logger.info(f'Epoch {epoch:3d}; train loss {total_loss / total_samples:.6f}; valid mse {valid_mse:.6f}')
+                logger.info(f'\rEpoch {epoch:2d}; batch {batch_counter:5d}; '
+                            f'train loss {total_loss / total_samples:.6f}; valid mse {valid_mse:.6f}')
                 if best_loss > valid_mse:
                     if hasattr(model, 'module'):
                         torch.save(model.module, model_path)
@@ -48,7 +49,7 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
                     best_loss = valid_mse
 
         lr_sch.step()
-        logger.info(f"Epoch {epoch:3d} done; train loss {total_loss / total_samples:.6f}")
+        logger.info(f'Epoch {epoch:3d} done; train loss {total_loss / total_samples:.6f}')
         if batch_counter > 50000:
             break
 
@@ -74,18 +75,23 @@ def train():
     valid_dlr = DataLoader(valid_data, batch_size=config.batch_size,
                            collate_fn=lambda x: batch_loader(x, config.review_net_only))
 
-    # model = UMPR(config, w2v.embedding).to(config.device)
-    model = torch.nn.DataParallel(UMPR(config, w2v.embedding)).to(config.device)
+    if config.multi_gpu:
+        model = torch.nn.DataParallel(UMPR(config, w2v.embedding)).to(config.device)
+    else:
+        model = UMPR(config, w2v.embedding).to(config.device)
     training(train_dlr, valid_dlr, model, config, config.model_path)
 
 
 def test():
     logger.debug('Loading test dataset.')
     test_data = Dataset(test_path, photo_json, photo_path, w2v, config)
-    test_dlr = DataLoader(test_data, batch_size=config.batch_size * 2,
+    test_dlr = DataLoader(test_data, batch_size=config.batch_size,
                           collate_fn=lambda x: batch_loader(x, config.review_net_only))
     logger.info('Start to test.')
-    model = torch.load(config.model_path)
+    if config.multi_gpu:
+        model = torch.nn.DataParallel(torch.load(config.model_path)).to(config.device)
+    else:
+        model = torch.load(config.model_path)
     test_loss = evaluate_mse(model, test_dlr)
     logger.info(f"Test end, test mse is {test_loss:.6f}")
 

@@ -10,19 +10,25 @@ from tqdm import tqdm, trange
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, data_path, photo_json, photo_dir, word2vec, config):
-        self.s_count = config.sent_count
-        self.lowest_s_count = config.lowest_sent_count
-        self.ui_s_count = config.ui_sent_count
-        self.s_length = config.sent_length
+        self.max_s_count = config.max_sent_count
+        self.min_s_count = config.min_sent_count
+        self.max_ui_s_count = config.max_ui_sent_count
+        self.max_s_length = config.max_sent_length
         self.photo_count = config.photo_count
+        self.views = config.views
 
         df = pd.read_csv(data_path)
-        df['review'] = df['review'].apply(
-            lambda x: [word2vec.sent2indices(sent)[:self.s_length] for sent in str(x).strip('. ').split('.')
-                       if len(sent) > 5])
+        df['review'] = df['review'].apply(lambda x: [
+            s for s in [
+                word2vec.sent2indices(sent)[:self.max_s_length] for sent in
+                (str(x).strip('. ').split('.') if config.review_level == 'sentence' else [str(x)])
+            ]
+            if len(s) > 5  # sentence with length not more than 5 will be removed.
+        ])  # Each review will be formatted to [[wid1, wid2,...],[wid1,...],...] under the sentence level.
 
-        self.retain_idx = [True] * df.shape[0]
-        photos_name = self._get_photos_name(photo_json, photo_dir, df['itemID'], config.view_size)
+        self.retain_idx = [len(x) > 0 for x in df['review']]  # review with none of sentence will be removed.
+
+        photos_name = self._get_photos_name(photo_json, photo_dir, df['itemID'])
         user_reviews = self._get_reviews(df)  # Gather reviews for every user without target review(i.e. u to i).
         item_reviews = self._get_reviews(df, 'item_num', 'user_num')
         ui_reviews = self._get_ui_review(df)
@@ -42,7 +48,10 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.data[0])
 
     def _get_reviews(self, df, lead='user_num', costar='item_num'):
-        reviews_by_lead = dict(list(df[[costar, 'review']].groupby(df[lead])))  # Information for every user/item
+        groups = defaultdict(list)
+        for lead_id, costar_id, review in tqdm(zip(df[lead], df[costar], df['review']), total=len(df), desc='Grouping'):
+            groups[lead_id].append([costar_id, review])
+
         results = []
         with trange(len(df[lead]), desc=f'Loading sentences of {lead}') as t_bar:
             for i, (lead_id, costar_id) in enumerate(zip(df[lead], df[costar])):
@@ -50,16 +59,16 @@ class Dataset(torch.utils.data.Dataset):
                 if not self.retain_idx[i]:
                     results.append(None)
                     continue
-                df_data = reviews_by_lead[lead_id]  # get information of lead, return DataFrame.
-                reviews = df_data['review'][df_data[costar] != costar_id]  # get reviews without that u to i.
+
+                reviews = [r for cid, r in groups[lead_id] if cid != costar_id]  # get reviews without that u to i.
                 sentences = [sent for review in reviews for sent in review]
-                if len(sentences) < self.lowest_s_count:
+                if len(sentences) < self.min_s_count:
                     self.retain_idx[i] = False
                     results.append(None)
                     continue
-                if len(sentences) > self.s_count:
+                if len(sentences) > self.max_s_count:
                     sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
-                    sentences = sentences[:self.s_count]
+                    sentences = sentences[:self.max_s_count]
                 results.append(sentences)
         return results  # shape(sample_count,sent_count)
 
@@ -69,20 +78,16 @@ class Dataset(torch.utils.data.Dataset):
             if not self.retain_idx[i]:
                 reviews.append(None)
                 continue
-            if len(sentences) > self.ui_s_count:
+            if len(sentences) > self.max_ui_s_count:
                 sentences.sort(key=lambda x: -len(x))  # sort by length of sentence.
-                sentences = sentences[:self.ui_s_count]
+                sentences = sentences[:self.max_ui_s_count]
             reviews.append(sentences)
         return reviews
 
-    def _get_photos_name(self, photos_json, photo_dir, item_id_list, view_size):
+    def _get_photos_name(self, photos_json, photo_dir, item_id_list):
         photo_df = pd.read_json(photos_json, orient='records', lines=True)
-        if 'yelp' in photo_dir:
-            self.views = ['food', 'inside', 'outside', 'drink']
-        else:  # amazon
-            self.views = ['unknown']
-            photo_df['label'] = self.views[0]  # Due to amazon have no label.
-        assert len(self.views) == view_size, f'By "{photos_json}", Config().view_size must be {len(self.views)}!'
+        if 'label' not in photo_df.columns:
+            photo_df['label'] = self.views[0]  # Because amazon have no label.
 
         photo_groups = defaultdict(dict)
         for row in tqdm(photo_df.itertuples(), desc='Reading photos\' DataFrame', total=len(photo_df)):
