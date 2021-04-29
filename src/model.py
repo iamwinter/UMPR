@@ -41,12 +41,14 @@ class RNet(nn.Module):
         item_emb = item_emb.view(item_emb.shape[0] * item_emb.shape[1], item_emb.shape[2], item_emb.shape[3])
         u_lengths = u_lengths.view(u_lengths.shape[0] * u_lengths.shape[1])
         i_lengths = i_lengths.view(i_lengths.shape[0] * i_lengths.shape[1])
+
         gru_u, hn = self.gru(user_emb, u_lengths)
         gru_i, hn = self.gru(item_emb, i_lengths)  # out(batch_size*sent_count, sent_length, 2*gru_out)
         gru_u = gru_u.reshape(batch_size, sent_count * sent_length, -1)
         gru_i = gru_i.reshape(batch_size, sent_count * sent_length, -1)
 
         A = gru_i @ self.M @ gru_u.transpose(-1, -2)  # (3) affinity matrix
+        A = torch.tanh(A)
         soft_u = torch.softmax(torch.max(A, dim=-2).values, dim=-1)  # column
         soft_i = torch.softmax(torch.max(A, dim=-1).values, dim=-1)  # row. out(batch, sent_count * sent_length)
         atte_u = gru_u.transpose(-1, -2) @ soft_u.unsqueeze(-1)

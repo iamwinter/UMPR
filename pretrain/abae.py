@@ -10,9 +10,33 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-sys.path.append('../')
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from src.helpers import get_logger
 from src.word2vec import Word2vec
+
+
+class ABAEDataset(torch.utils.data.Dataset):
+    def __init__(self, word2vec, sentences, training=True, labels=None, max_length=20, neg_count=20):
+        data = [word2vec.sent2indices(sent, align_length=max_length) for sent in sentences]
+
+        if not training:
+            if labels is not None:  # test
+                self.data = (torch.LongTensor(data), labels)
+            else:  # predict
+                self.data = [torch.LongTensor(data), ]
+        else:
+            pos, neg = [], []
+            for i, s in enumerate(data):
+                pos.append(s)
+                neg_idx = [idx for idx in random.sample(range(len(data)), k=neg_count + 1) if i != idx][:neg_count]
+                neg.append([data[idx] for idx in neg_idx])
+            self.data = (torch.LongTensor(pos), torch.LongTensor(neg))
+
+    def __getitem__(self, idx):
+        return tuple(x[idx] for x in self.data)
+
+    def __len__(self):
+        return len(self.data[0])
 
 
 class ABAE(nn.Module):
@@ -78,30 +102,6 @@ class ABAE(nn.Module):
         return aspects
 
 
-class ABAEDataset(torch.utils.data.Dataset):
-    def __init__(self, word2vec, sentences, training=True, labels=None, max_length=20, neg_count=20):
-        data = [word2vec.sent2indices(sent, align_length=max_length) for sent in sentences]
-
-        if not training:
-            if labels is not None:  # test
-                self.data = (torch.LongTensor(data), labels)
-            else:  # predict
-                self.data = [torch.LongTensor(data), ]
-        else:
-            pos, neg = [], []
-            for i, s in enumerate(data):
-                pos.append(s)
-                neg_idx = [idx for idx in random.sample(range(len(data)), k=neg_count + 1) if i != idx][:neg_count]
-                neg.append([data[idx] for idx in neg_idx])
-            self.data = (torch.LongTensor(pos), torch.LongTensor(neg))
-
-    def __getitem__(self, idx):
-        return tuple(x[idx] for x in self.data)
-
-    def __len__(self):
-        return len(self.data[0])
-
-
 def train_ABAE(word2vec, train_data, sent_len, neg_count, batch_size, aspect_size,
                abae_regular, device, learning_rate,
                lr_decay, train_epochs, save_path, valid=None, logger=None):
@@ -123,7 +123,7 @@ def train_ABAE(word2vec, train_data, sent_len, neg_count, batch_size, aspect_siz
     for epoch in range(train_epochs):
         model.train()
         total_loss, total_samples = 0, 0
-        for i, batch in tqdm(train_dlr, desc=f'ABAE training epoch {epoch}'):
+        for batch in tqdm(train_dlr, desc=f'ABAE training epoch {epoch}'):
             label_probs, loss = model(*batch)
             loss = loss.mean()
             opt.zero_grad()
@@ -193,11 +193,12 @@ if __name__ == '__main__':
     logger = get_logger()
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
-    parser.add_argument('--train_epochs', type=int, default=10, help='number of epochs to train')
-    parser.add_argument('--batch_size', type=int, default=128, help='input batch size for training')
-    parser.add_argument('--learning_rate', type=float, default=0.0001, help='learning rate')
+    parser.add_argument('--train_epochs', type=int, default=15, help='number of epochs to train')
+    parser.add_argument('--batch_size', type=int, default=512, help='input batch size for training')
+    parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
     parser.add_argument('--abae_regular', type=float, default=0.1)
     parser.add_argument('--lr_decay', type=float, default=0.99)
+    parser.add_argument('--data_dir', type=str, default='dataset/restaurant', help='dataset location')
     parser.add_argument('--train_w2v', type=bool, default=False, help='train word2vec by gensim')
     parser.add_argument('--vocab_size', type=int, default=9000, help='max size of vocab')
     parser.add_argument('--max_length', type=int, default=20, help='max length of sentence')
@@ -206,15 +207,15 @@ if __name__ == '__main__':
     parser.add_argument('--save_path', type=str, default=os.path.join(sys.path[0], 'model/ABAE.pt'))
     args = parser.parse_args()
 
-    word2vec_path = os.path.join(sys.path[0], './dataset/restaurant/w2v_embedding')
-    train_path = os.path.join(sys.path[0], 'dataset/restaurant/train.txt')
-    test_path = os.path.join(sys.path[0], 'dataset/restaurant/test.txt')
-    test_label_path = os.path.join(sys.path[0], 'dataset/restaurant/test_label.txt')
+    word2vec_path = os.path.join(sys.path[0], args.data_dir, 'w2v_embedding')
+    train_path = os.path.join(sys.path[0], args.data_dir, 'train.txt')
+    test_path = os.path.join(sys.path[0], args.data_dir, 'test.txt')
+    test_label_path = os.path.join(sys.path[0], args.data_dir, 'test_label.txt')
     os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
 
     trains = open(train_path, 'r').readlines()
     tests = open(test_path, 'r').readlines()
-    test_label = open(test_label_path, 'r').readlines()
+    test_label = [s.strip() for s in open(test_label_path, 'r').readlines()]
     logger.info(f'train sentences: {len(trains)}')
     logger.info(f'test sentences: {len(tests)}')
 
@@ -230,4 +231,4 @@ if __name__ == '__main__':
 
     # Evaluate
     test_model = torch.load(args.save_path)
-    evaluate(test_model, w2v, tests, test_label, sent_len=args.max_length, batch_size=2048)
+    evaluate(test_model, w2v, tests, test_label, sent_len=args.max_length, batch_size=1024)

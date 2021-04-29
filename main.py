@@ -19,7 +19,10 @@ def training(train_dataloader, valid_dataloader, model, config, model_path):
     logger.info(f'Initial validation mse is {valid_mse:.6f}')
     start_time = time.perf_counter()
 
-    opt = torch.optim.Adam(model.parameters(), config.learning_rate, weight_decay=config.l2_regularization)
+    opt = torch.optim.Adam([
+        {'params': (p for name, p in model.named_parameters() if 'bias' not in name)},
+        {'params': (p for name, p in model.named_parameters() if 'bias' in name), 'weight_decay': 0.}
+    ], config.learning_rate, weight_decay=config.l2_regularization)
     lr_sch = torch.optim.lr_scheduler.ExponentialLR(opt, config.lr_decay)
 
     best_loss, batch_counter = 100, 0

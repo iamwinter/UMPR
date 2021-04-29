@@ -8,6 +8,7 @@ Then Execute following command to train and evaluate ABAE.
 ```shell script
 python abae.py --neg_count 20 \
     --aspect_size 14 \
+    --data_dir dataset/restaurant \
     --save_path ./model/ABAE.pt
 ```
 
