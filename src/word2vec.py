@@ -45,7 +45,7 @@ class Word2vec:
 
     def _from_glove(self, emb_path):
         with open(emb_path, encoding='utf-8') as f:
-            for line in tqdm(f.readlines(), desc=f'Loading word2vec from {emb_path}'):
+            for line in tqdm(f.readlines(), desc=f'Loading word2vec from {emb_path}', leave=False):
                 tokens = line.split()
                 self.vocab.append(tokens[0])
                 self.word2index[tokens[0]] = len(self.word2index)
@@ -56,7 +56,7 @@ class Word2vec:
         vocabs = model.wv.vocab.items()
         if vocab_size > 0:
             vocabs = sorted(vocabs, key=lambda x: x[1].count, reverse=True)[:vocab_size]  # sort by frequency
-        for w, _ in tqdm(vocabs, desc=f'Loading word2vec from {emb_path}'):
+        for w, _ in tqdm(vocabs, desc=f'Loading word2vec from {emb_path}', leave=False):
             self.vocab.append(w)
             self.word2index[w] = len(self.word2index)
             self.embedding.append(model.wv[w])

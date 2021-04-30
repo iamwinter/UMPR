@@ -24,14 +24,15 @@ Specific pre-training methods for UMPR are listed below.
 
 Execute following command to generate pretraining parameters of R-Net. 
 ```shell script
-python pretrain_rnet.py --train_w2v True \
-    --word2vec dataset/word2vec/music_small \
+python pretrain_rnet.py --data_dir ../data/music_small \
     --aspect_size 14 \
-    --data_dir ../data/music_small \
+    --emb_dim 50 \
     --gru_size 64 \
-    --save_ABAE ./model/trained_ABAE.pt \
+    --save_ABAE ./model/trained_ABAE_rnet.pt \
     --save_rnet ./model/pretraining_rnet.pt
 ```
+**Note**: `emb_dim` must be equal to 50 as same as word embedding size used in UMPR.
+
 **Note**: `gru_size` should be equal to the parameter with same name of UMPR.
 
 ## 2. To be continued...

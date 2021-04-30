@@ -10,7 +10,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+sys.path.append(os.path.dirname(sys.path[0]))
 from src.helpers import get_logger
 from src.word2vec import Word2vec
 
@@ -106,7 +106,6 @@ def train_ABAE(word2vec, train_data, sent_len, neg_count, batch_size, aspect_siz
                abae_regular, device, learning_rate,
                lr_decay, train_epochs, save_path, valid=None, logger=None):
     logger.info('Loading training dataset')
-
     train_data = ABAEDataset(word2vec, train_data, max_length=sent_len, neg_count=neg_count)
     train_dlr = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     if valid is not None:
@@ -119,7 +118,7 @@ def train_ABAE(word2vec, train_data, sent_len, neg_count, batch_size, aspect_siz
     opt = torch.optim.Adam(model.parameters(), learning_rate)
     lr_sch = torch.optim.lr_scheduler.ExponentialLR(opt, lr_decay)
 
-    logger.info('Start to train.')
+    logger.info('Start to train ABAE.')
     for epoch in range(train_epochs):
         model.train()
         total_loss, total_samples = 0, 0
@@ -172,7 +171,7 @@ def evaluate(model, word2vec, tests, test_labels, sent_len=20, batch_size=1024):
     aspect_words = []
     categories = ['Food', 'Staff', 'Ambience', 'Price', 'Anecdotes', 'Miscellaneous']
     logger.info(f'Please choose a category from following list for each aspect.')
-    logger.info(dict(enumerate(categories)))
+    logger.info(dict((k, v) for k, v in enumerate(categories)))
     for k in range(len(model.aspect)):
         aspect_words.append(categories[int(input(f'Input index(0~{len(categories) - 1}) to aspect {k}:'))])
 
@@ -199,8 +198,8 @@ if __name__ == '__main__':
     parser.add_argument('--abae_regular', type=float, default=0.1)
     parser.add_argument('--lr_decay', type=float, default=0.99)
     parser.add_argument('--data_dir', type=str, default='dataset/restaurant', help='dataset location')
-    parser.add_argument('--train_w2v', type=bool, default=False, help='train word2vec by gensim')
     parser.add_argument('--vocab_size', type=int, default=9000, help='max size of vocab')
+    parser.add_argument('--emb_dim', type=int, default=200, help='size of word vector')
     parser.add_argument('--max_length', type=int, default=20, help='max length of sentence')
     parser.add_argument('--neg_count', type=int, default=20, help='how many negative sample for a positive one.')
     parser.add_argument('--aspect_size', type=int, default=14, help='Aspect size.')
@@ -219,8 +218,9 @@ if __name__ == '__main__':
     logger.info(f'train sentences: {len(trains)}')
     logger.info(f'test sentences: {len(tests)}')
 
-    if args.train_w2v:
-        wv = gensim.models.Word2Vec([s.split() for s in trains + tests], size=200, window=5, min_count=10, workers=4)
+    if not os.path.exists(word2vec_path):
+        wv = gensim.models.Word2Vec([s.split() for s in trains + tests],
+                                    size=args.emb_dim, window=5, min_count=10, workers=4)
         wv.save(word2vec_path)
 
     w2v = Word2vec(word2vec_path, source='gensim', vocab_size=args.vocab_size)
